@@ -3,7 +3,12 @@
 
 ---
 
-![M-Connect CLI](./Assets/banner.jpg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Assets/banner.png">
+  <source media="(prefers-color-scheme: light)" srcset="Assets/banner_dark.png">
+  <img alt="M-Connect" src="Assets/banner.png">
+</picture>
+
 
 **M-Connect** ("Musen" + "Connect" - *musen* 無線 es japonés para "inalámbrico") es una CLi diseñada para ser simple, bonita y liviana. Este proyecto no busca ser una alternativa a programas como KDE Connect o una continuación del proyecto Y-Connect, sino una base sólida que se puede usar para proyectos de este estilo en el futuro: un daemon de PC, un cliente de línea de comandos y una app de Android que permiten que una computadora y un móvil se descubran en la red local y se hablen entre sí. 
 
