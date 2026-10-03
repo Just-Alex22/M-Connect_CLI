@@ -61,7 +61,7 @@ flowchart LR
 
 ## Por qué D-Bus, por qué asyncio, por qué sin GLib
 
-Todo el lado PC es Python `asyncio`, incluida la capa D-Bus (vía [`dbus-next`](https://github.com/altdesktop/dbus-next), no `pydbus`/`dbus-python`). Fue una decisión deliberada: el mainloop de GLib también funcionaría, pero es una dependencia extra sin beneficio para un proyecto que todavía no tiene UI. Si/cuando se construya una GUI (), el propio soporte D-Bus de GLib (`Gio.DBusProxy`) puede hablar con el mismo nombre de bus e interfaz sin cambiar nada del lado del engine.
+Todo el lado PC es Python `asyncio`, incluida la capa D-Bus (vía [`dbus-next`](https://github.com/altdesktop/dbus-next), no `pydbus`/`dbus-python`). Fue una decisión deliberada: el mainloop de GLib también funcionaría, pero es una dependencia extra sin beneficio para un proyecto que todavía no tiene UI. Si/cuando se construya una GUI, el propio soporte D-Bus de GLib (`Gio.DBusProxy`) puede hablar con el mismo nombre de bus e interfaz sin cambiar nada del lado del engine.
 
 ## Por qué el engine sigue en Python por ahora
 
@@ -83,7 +83,7 @@ El plan es, eventualmente, reescribir `engine.py` en C o [Vala](https://vala.dev
     └── app/src/main/AndroidManifest.xml
 ```
  
-
+---
 
 # Requisitos
 
