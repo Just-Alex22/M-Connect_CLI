@@ -182,7 +182,7 @@ async def exec_remote(address, command):
         return [
             -1,
             "",
-            f"{address} refused the connection on port {EXEC_PORT} — "
+            f"{address} refused the connection on port {EXEC_PORT}: "
             "it may not be running an exec server (e.g. it's a phone/client-only device)",
         ]
     except OSError as e:
@@ -245,7 +245,7 @@ async def _call_phone_device(address, request):
     except ConnectionRefusedError:
         return json.dumps({
             "ok": False,
-            "error": f"{address} refused the connection on port {PHONE_DEVICE_PORT} — is the M-Connect app open on the phone?",
+            "error": f"{address} refused the connection on port {PHONE_DEVICE_PORT}: is the M-Connect app open on the phone?",
         })
     except OSError as e:
         return json.dumps({"ok": False, "error": f"connection failed: {e}"})
