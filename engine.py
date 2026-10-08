@@ -20,7 +20,6 @@
 import asyncio
 import socket
 import json
-import uuid
 import time
 import platform
 import base64
@@ -28,6 +27,8 @@ import os
 
 from dbus_next.service import ServiceInterface, method
 from dbus_next.aio import MessageBus
+
+from identity import load_or_create_device_id
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -40,7 +41,7 @@ CLEANUP_INTERVAL_SECONDS = 2
 BUS_NAME = "com.appleton.MConnect"
 OBJECT_PATH = "/com/appleton/MConnect/Engine"
 
-DEVICE_ID = str(uuid.uuid4())
+DEVICE_ID = load_or_create_device_id()
 DEVICE_NAME = platform.node()
 
 devices = {}
