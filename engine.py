@@ -20,6 +20,7 @@
 import asyncio
 import socket
 import json
+import ssl
 import time
 import platform
 import base64
@@ -28,7 +29,7 @@ import os
 from dbus_next.service import ServiceInterface, method
 from dbus_next.aio import MessageBus
 
-from identity import load_or_create_device_id
+from identity import load_or_create_device_id, build_server_ssl_context, build_client_ssl_context
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -171,14 +172,18 @@ async def handle_exec_client(reader, writer):
 
 
 async def start_exec_server():
-    server = await asyncio.start_server(handle_exec_client, "0.0.0.0", EXEC_PORT)
+    server = await asyncio.start_server(
+        handle_exec_client, "0.0.0.0", EXEC_PORT, ssl=build_server_ssl_context()
+    )
     async with server:
         await server.serve_forever()
 
 
 async def exec_remote(address, command):
     try:
-        reader, writer = await asyncio.open_connection(address, EXEC_PORT)
+        reader, writer = await asyncio.open_connection(
+            address, EXEC_PORT, ssl=build_client_ssl_context()
+        )
     except ConnectionRefusedError:
         return [
             -1,
@@ -186,7 +191,7 @@ async def exec_remote(address, command):
             f"{address} refused the connection on port {EXEC_PORT}: "
             "it may not be running an exec server (e.g. it's a phone/client-only device)",
         ]
-    except OSError as e:
+    except (OSError, ssl.SSLError) as e:
         return [-1, "", f"connection failed: {e}"]
 
     request = {"type": "exec", "command": command}

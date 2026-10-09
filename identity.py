@@ -18,6 +18,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.en.html>.
 
 import os
+import ssl
 import datetime
 
 from cryptography import x509
@@ -104,3 +105,19 @@ def cert_fingerprint(cert):
 def cert_fingerprint_display(cert):
     raw = cert_fingerprint(cert)
     return ":".join(raw[i:i + 2] for i in range(0, len(raw), 2)).upper()
+
+
+def build_server_ssl_context():
+    load_or_create_identity()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=CERT_PATH, keyfile=KEY_PATH)
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def build_client_ssl_context():
+    load_or_create_identity()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
