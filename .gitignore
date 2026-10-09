@@ -34,3 +34,6 @@ Thumbs.db
 
 # Archivos de Gradle wrapper (se mantienen, salvo el jar que se puede regenerar)
 !gradle/wrapper/gradle-wrapper.jar
+
+# Python
+__pycache__/
