@@ -29,7 +29,13 @@ import os
 from dbus_next.service import ServiceInterface, method
 from dbus_next.aio import MessageBus
 
-from identity import load_or_create_device_id, build_server_ssl_context, build_client_ssl_context
+from identity import (
+    load_or_create_device_id,
+    build_server_ssl_context,
+    build_client_ssl_context,
+    fingerprint_from_der,
+)
+from trust import is_trusted, trust as trust_device
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -131,6 +137,7 @@ async def start_discovery():
 async def handle_exec_client(reader, writer):
     peer = writer.get_extra_info("peername")
     peer_ip = peer[0] if peer else "unknown"
+    response = None
 
     try:
         line = await reader.readline()
@@ -165,8 +172,9 @@ async def handle_exec_client(reader, writer):
             "stderr": "invalid request",
         }
     finally:
-        writer.write((json.dumps(response) + "\n").encode("utf-8"))
-        await writer.drain()
+        if response is not None:
+            writer.write((json.dumps(response) + "\n").encode("utf-8"))
+            await writer.drain()
         writer.close()
         await writer.wait_closed()
 
@@ -177,6 +185,24 @@ async def start_exec_server():
     )
     async with server:
         await server.serve_forever()
+
+
+async def get_peer_fingerprint(address, port):
+    try:
+        reader, writer = await asyncio.open_connection(
+            address, port, ssl=build_client_ssl_context()
+        )
+    except (OSError, ssl.SSLError) as e:
+        return None, str(e)
+
+    ssl_object = writer.get_extra_info("ssl_object")
+    der_cert = ssl_object.getpeercert(binary_form=True)
+    fingerprint = fingerprint_from_der(der_cert)
+
+    writer.close()
+    await writer.wait_closed()
+
+    return fingerprint, None
 
 
 async def exec_remote(address, command):
@@ -193,6 +219,19 @@ async def exec_remote(address, command):
         ]
     except (OSError, ssl.SSLError) as e:
         return [-1, "", f"connection failed: {e}"]
+
+    ssl_object = writer.get_extra_info("ssl_object")
+    der_cert = ssl_object.getpeercert(binary_form=True)
+    fingerprint = fingerprint_from_der(der_cert)
+
+    if not is_trusted(address, fingerprint):
+        writer.close()
+        await writer.wait_closed()
+        return [
+            -1,
+            "",
+            f"{address} is not paired yet (fingerprint {fingerprint}). Pair it first.",
+        ]
 
     request = {"type": "exec", "command": command}
     writer.write((json.dumps(request) + "\n").encode("utf-8"))
@@ -283,6 +322,18 @@ class EngineInterface(ServiceInterface):
     @method()
     async def Exec(self, address: "s", command: "s") -> "(iss)":
         return await exec_remote(address, command)
+
+    @method()
+    async def GetFingerprint(self, address: "s", port: "i") -> "s":
+        fingerprint, error = await get_peer_fingerprint(address, port)
+        if fingerprint is None:
+            return json.dumps({"ok": False, "error": error})
+        return json.dumps({"ok": True, "fingerprint": fingerprint})
+
+    @method()
+    def TrustDevice(self, address: "s", fingerprint: "s") -> "s":
+        trust_device(address, fingerprint)
+        return json.dumps({"ok": True})
 
     @method()
     async def DeviceGet(self, address: "s", category: "s", field: "s", extra: "s") -> "s":

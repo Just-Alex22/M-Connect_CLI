@@ -107,6 +107,11 @@ def cert_fingerprint_display(cert):
     return ":".join(raw[i:i + 2] for i in range(0, len(raw), 2)).upper()
 
 
+def fingerprint_from_der(der_bytes):
+    cert = x509.load_der_x509_certificate(der_bytes)
+    return cert_fingerprint_display(cert)
+
+
 def build_server_ssl_context():
     load_or_create_identity()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
