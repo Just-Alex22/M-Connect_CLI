@@ -1,4 +1,4 @@
-> [!NOTE]
+> [!TIP]
 > Para leer la versión en español de este documento, haz clic [aquí](README.md).
 > *(To read the Spanish version of this document, click [here](README.md).)*
 
@@ -100,14 +100,14 @@ A running D-Bus session bus (standard on any Linux desktop; `dbus-daemon --sessi
 
 - Android 7.0 (API 24) or higher to run the app at all
 - **Android 10 (API 29) or higher** for `enviar-archivo` (it uses the scoped `MediaStore` storage API: there is no fallback for older versions)
-- The same WiFi network as the PC, with **client/AP isolation disabled** on the router (isolation completely blocks the UDP discovery broadcast: this stalled several early tests)
+- The same WiFi network as the PC, with **client/AP isolation disabled** on the router (isolation completely blocks the UDP discovery broadcast)
 - Notification Access granted to the app (`Settings > Apps > M-Connect > Notification access`, or the button inside the app) for anything under `multimedia` or `notificaciones`
 
 ---
 
 # Getting started
 
-1. Build and install the Android app from `mconnect-android/` on your phone (Android Studio; it needs real internet access for Gradle/Maven, so it can't be built in an isolated environment).
+1. Build and install the Android app from `mconnect-android/` on your phone.
 
 2. Open the app once so it starts announcing itself and listening on the device control port.
 
@@ -179,7 +179,8 @@ Press **Tab** at any time to autocomplete commands, categories, fields, values, 
 
 # Protocol reference
  
-> **Note:** the protocol that travels over the network is still in **English**. Even though the CLI commands are in Spanish, the Android app is already compiled expecting these exact words (`"battery"`, `"volume"`, etc.). The CLI internally translates what you type into the protocol before sending it.
+> [!NOTE]
+> The protocol that travels over the network is still in **English**. Even though the CLI commands are in Spanish, the Android app is already compiled expecting these exact words (`"battery"`, `"volume"`, etc.). The CLI internally translates what you type into the protocol before sending it.
  
 All messages are sent as **newline-delimited JSON**, one JSON object per line, with no length prefixes, except for the base64 payload of `enviar-archivo`, which goes inline on its own line.
  
