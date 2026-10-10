@@ -1,4 +1,4 @@
-> [!NOTE]
+> [!TIP]
 > To read the English version of this document, click [here](README_ENG.md).
 
 ---
@@ -55,7 +55,7 @@ flowchart LR
 
 **`engine.py`** es el daemon que hace el trabajo de red real: anuncia esta PC en la red local, escucha otros dispositivos, corre un servidor de exec para control PC-a-PC, y reenvía pedidos de `device-get`/`device-set`/archivos a un celular conectado. Expone todo esto por **D-Bus** (nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/Engine`) para que cualquier cliente, esta CLI o una futura GUI pueda manejarlo sin reimplementar nada de la red.
 
-**`mconnect_cli.py`** es un cliente delgado. Arranca `engine.py` solo si no está corriendo, mantiene una conexión D-Bus persistente durante toda la sesión y traduce los comandos escritos en llamadas D-Bus. Dos comandos (el probe de `conectar` y el stream en vivo de `vigilar-dispositivo`) hablan directamente con el celular por TCP en vez de pasar por el engine, un atajo deliberado mientras esa parte del diseño del engine sigue siendo básica.
+**`mconnect_cli.py`** es un cliente delgado. Arranca `engine.py` solo si no está corriendo, mantiene una conexión D-Bus persistente durante toda la sesión y traduce los comandos escritos en llamadas D-Bus. Dos comandos (el probe de `conectar` y el stream en vivo de `vigilar-dispositivo`) hablan directamente con el dispositivo por TCP en vez de pasar por el engine, un atajo deliberado mientras esa parte del diseño del engine sigue siendo básica.
 
 **La app de Android** corre `DeviceServer.kt`, un pequeño servidor TCP que responde a pedidos `get`/`set`/`file`/`watch`, más un broadcast de identidad en segundo plano para que el engine la pueda descubrir. Leer info de multimedia y notificaciones requiere que el usuario le otorgue a la app el permiso especial de **Acceso a Notificaciones** de Android (el mismo requisito que tiene KDE Connect real).
 
@@ -99,24 +99,24 @@ Una sesión  de bus de D-Bus corriendo (estándar en cualquier escritorio Linux;
 
 - Android 7.0 (API 24) o superior para correr la app en lo absoluto
 - **Android 10 (API 29) o superior** para `enviar-archivo` (usa la API de almacenamiento con alcance `MediaStore`: no hay fallback para versiones más viejas)
-- La misma red WiFi que la PC, con el **aislamiento de clientes/AP desactivado** en el router (el aislamiento bloquea por completo el broadcast UDP de descubrimiento: esto trabó varias pruebas tempranas)
+- La misma red WiFi que la PC, con el **aislamiento de clientes/AP desactivado** en el router 
 - Acceso a Notificaciones otorgado a la app (`Ajustes > Apps > M-Connect > Acceso a notificaciones`, o el botón dentro de la app) para cualquier cosa bajo `multimedia` o `notificaciones`
 
 ---
 
 # Primeros pasos
 
-2. Compila e instala la app de Android desde `mconnect-android/` en tu móvil (Android Studio; necesita acceso real a internet para Gradle/Maven, así que no se puede compilar en un entorno aislado).
+1. Compila e instala la app de Android desde `mconnect-android/` en tu móvil.
 
-4. Abrí la app una vez para que empiece a anunciarse y a escuchar en el puerto de control del dispositivo.
+2. Abrí la app una vez para que empiece a anunciarse y a escuchar en el puerto de control del dispositivo.
 
-6. En la PC, simplemente ejecuta la CLI; la app arranca `engine.py` automáticamente:
+3. En la PC, simplemente ejecuta la CLI; la app arranca `engine.py` automáticamente:
 
    ```bash
    python3 mconnect_cli.py
    ```
 
-8. Dentro de la shell:
+4. Dentro de la shell:
 
    ```
    ❯ descubrir
@@ -175,13 +175,14 @@ Presiona **Tab** en cualquier momento para autocompletar comandos, categorías, 
 
 # Referencia del protocolo
  
-> **Nota:** el protocolo que viaja por la red sigue en **inglés**, aunque los comandos de la CLI estén en español, la app de Android ya está compilada esperando estas palabras exactas (`"battery"`, `"volume"`, etc.). La CLI traduce internamente lo que escribes al protocolo antes de mandarlo.
+> [!NOTE]
+> El protocolo que viaja por la red sigue en **inglés**, aunque los comandos de la CLI estén en español, la app de Android ya está compilada esperando estas palabras exactas (`"battery"`, `"volume"`, etc.). La CLI traduce internamente lo que escribes al protocolo antes de mandarlo.
  
 Todos los mensajes van como **JSON delimitado por saltos de línea**, un objeto JSON por línea, sin prefijos de longitud salvo el payload en base64 de `enviar-archivo`, que va inline en su propia línea.
  
 ### Descubrimiento: broadcast UDP, puerto `17160`
  
-Cada participante (engines de PC y la app del celular por igual) lo transmite cada 2 segundos, y escucha lo mismo de los demás:
+Cada participante (engines de PC y la app Android por igual) lo transmite cada 2 segundos, y escucha lo mismo de los demás:
  
 ```json
 {"type": "identity", "deviceId": "<uuid>", "deviceName": "<hostname o modelo>", "port": <puerto-de-control>}
@@ -253,7 +254,7 @@ Son carencias registradas, no descuidos: léelas antes de usar esto en algo que 
  
 - **No hay autenticación ni emparejamiento en ningún canal.** Cualquier dispositivo en la red local puede ahora mismo llamar a `exec` en una PC corriendo `engine.py`, o mandar pedidos `device-get`/`device-set` a un celular corriendo la app. No existe todavía un equivalente al emparejamiento con certificados TLS de KDE Connect u otras apps. **No expongas esto más allá de una red local de confianza.**
 - **La transferencia de archivos es base64 sobre una línea JSON**, lo cual es simple pero infla el tamaño en ~33% y mantiene el archivo completo en memoria en ambos lados. Está bien para prototipar; un protocolo binario con prefijo de longitud sería el arreglo real para archivos grandes.
-- **`engine.py` no está autenticado ni aislado por la naturaleza de la función de exec**, tratá cualquier máquina que lo corra como alcanzable y controlable por cualquier otra cosa en el mismo segmento de LAN.
+- **`engine.py` no está autenticado ni aislado por la naturaleza de la función de exec**, trata cualquier máquina que lo corra como alcanzable y controlable por cualquier otra cosa en el mismo segmento de LAN.
 ---
  
 ## Licencia
