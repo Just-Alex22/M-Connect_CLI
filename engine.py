@@ -218,7 +218,7 @@ async def exec_remote(address, command):
             "it may not be running an exec server (e.g. it's a phone/client-only device)",
         ]
     except (OSError, ssl.SSLError) as e:
-        return [-1, "", f"connection failed: {e}"]
+        return [-1, "", f"connection failed: {str(e) or e.__class__.__name__}"]
 
     ssl_object = writer.get_extra_info("ssl_object")
     der_cert = ssl_object.getpeercert(binary_form=True)
@@ -295,7 +295,7 @@ async def _call_phone_device(address, request):
             "error": f"{address} refused the connection on port {PHONE_DEVICE_PORT}: is the M-Connect app open on the phone?",
         })
     except (OSError, ssl.SSLError) as e:
-        return json.dumps({"ok": False, "error": f"connection failed: {e}"})
+        return json.dumps({"ok": False, "error": f"connection failed: {str(e) or e.__class__.__name__}"})
 
     ssl_object = writer.get_extra_info("ssl_object")
     der_cert = ssl_object.getpeercert(binary_form=True)
