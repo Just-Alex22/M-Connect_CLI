@@ -29,8 +29,11 @@ import shutil
 import textwrap
 import subprocess
 import atexit
+import ssl
 
 from dbus_next.aio import MessageBus
+from identity import build_client_ssl_context, fingerprint_from_der
+from trust import is_trusted
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import FileHistory, InMemoryHistory
@@ -160,6 +163,18 @@ class EngineClient:
         raw = await self._call("call_device_file", address, local_path, subdir)
         return json.loads(raw)
 
+    async def get_fingerprint(self, address, port):
+        raw = await self._call("call_get_fingerprint", address, port)
+        return json.loads(raw)
+
+    async def get_trusted_fingerprint(self, address):
+        raw = await self._call("call_get_trusted_fingerprint", address)
+        return json.loads(raw).get("fingerprint")
+
+    async def trust_device(self, address, fingerprint):
+        raw = await self._call("call_trust_device", address, fingerprint)
+        return json.loads(raw)
+
 
 def stop_engine():
     global engine_process
@@ -207,16 +222,14 @@ async def ensure_engine(client):
     return False
 
 
-async def probe_device(address, port=PHONE_DEVICE_PORT, timeout=2.0):
-    try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(address, port), timeout=timeout
-        )
-        writer.close()
-        await writer.wait_closed()
-        return True
-    except (OSError, asyncio.TimeoutError):
-        return False
+async def confirm_fingerprint(ip, fingerprint):
+    print(colorize(f"Dispositivo nuevo en {ip}.", Palette.WARNING))
+    print(colorize(f"Fingerprint: {fingerprint}", Palette.TITLE))
+    print(colorize("Confirmá en el otro dispositivo que este fingerprint coincide antes de aceptar.", Palette.MUTED))
+
+    loop = asyncio.get_event_loop()
+    answer = await loop.run_in_executor(None, input, "¿Confiar en este dispositivo? [s/N] ")
+    return answer.strip().lower() in ("s", "si", "sí", "y", "yes")
 
 
 def get_python_version():
@@ -569,17 +582,44 @@ async def handle_connect(args, state):
         return
 
     ip = args[0]
-    reachable = await with_spinner(f"Conectando a {ip}...", probe_device(ip))
 
-    if not reachable:
+    try:
+        result = await with_spinner(
+            f"Conectando a {ip}...", state["engine"].get_fingerprint(ip, PHONE_DEVICE_PORT)
+        )
+    except EngineUnavailable as e:
+        print_engine_unavailable(e)
+        return
+
+    if not result.get("ok"):
         print(colorize(
-            f"No se pudo contactar a {ip} en el puerto {PHONE_DEVICE_PORT}, ¿está abierta la app M-Connect en el dispositivo?",
+            f"No se pudo contactar a {ip} en el puerto {PHONE_DEVICE_PORT}: {result.get('error', 'error desconocido')}",
             Palette.ERROR,
         ))
         return
 
+    fingerprint = result["fingerprint"]
+    trusted_fingerprint = await state["engine"].get_trusted_fingerprint(ip)
+
+    if trusted_fingerprint == fingerprint:
+        state["connected_address"] = ip
+        print(colorize(f"Conectado a {ip}", Palette.SUCCESS))
+        return
+
+    if trusted_fingerprint is not None:
+        print(colorize(f"¡ATENCIÓN! El fingerprint de {ip} cambió desde el último emparejamiento.", Palette.ERROR))
+        print(colorize(f"Fingerprint anterior: {trusted_fingerprint}", Palette.MUTED))
+        print(colorize(f"Fingerprint actual:   {fingerprint}", Palette.ERROR))
+        print(colorize("Esto puede significar un ataque, o simplemente que reinstalaste la app en el dispositivo.", Palette.MUTED))
+
+    confirmed = await confirm_fingerprint(ip, fingerprint)
+    if not confirmed:
+        print(colorize("Emparejamiento cancelado.", Palette.MUTED))
+        return
+
+    await state["engine"].trust_device(ip, fingerprint)
     state["connected_address"] = ip
-    print(colorize(f"Conectado a {ip}", Palette.SUCCESS))
+    print(colorize(f"Emparejado y conectado a {ip}", Palette.SUCCESS))
 
 
 async def handle_clear(args, state):
@@ -695,7 +735,27 @@ async def handle_device_set(args, state):
 
 
 async def watch_notifications(address):
-    reader, writer = await asyncio.open_connection(address, PHONE_DEVICE_PORT)
+    try:
+        reader, writer = await asyncio.open_connection(
+            address, PHONE_DEVICE_PORT, ssl=build_client_ssl_context()
+        )
+    except (OSError, ssl.SSLError) as e:
+        print(colorize(f"No se pudo conectar: {e}", Palette.ERROR))
+        return
+
+    ssl_object = writer.get_extra_info("ssl_object")
+    der_cert = ssl_object.getpeercert(binary_form=True)
+    fingerprint = fingerprint_from_der(der_cert)
+
+    if not is_trusted(address, fingerprint):
+        writer.close()
+        await writer.wait_closed()
+        print(colorize(
+            f"{address} no está emparejado (fingerprint {fingerprint}). Usá 'conectar' primero.",
+            Palette.ERROR,
+        ))
+        return
+
     request = {"type": "watch", "category": "notifications"}
     writer.write((json.dumps(request) + "\n").encode("utf-8"))
     await writer.drain()

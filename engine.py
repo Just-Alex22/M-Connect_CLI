@@ -35,7 +35,7 @@ from identity import (
     build_client_ssl_context,
     fingerprint_from_der,
 )
-from trust import is_trusted, trust as trust_device
+from trust import is_trusted, trust as trust_device, get_trusted_fingerprint
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -286,14 +286,28 @@ async def device_file(address, local_path, subdir=""):
 
 async def _call_phone_device(address, request):
     try:
-        reader, writer = await asyncio.open_connection(address, PHONE_DEVICE_PORT)
+        reader, writer = await asyncio.open_connection(
+            address, PHONE_DEVICE_PORT, ssl=build_client_ssl_context()
+        )
     except ConnectionRefusedError:
         return json.dumps({
             "ok": False,
             "error": f"{address} refused the connection on port {PHONE_DEVICE_PORT}: is the M-Connect app open on the phone?",
         })
-    except OSError as e:
+    except (OSError, ssl.SSLError) as e:
         return json.dumps({"ok": False, "error": f"connection failed: {e}"})
+
+    ssl_object = writer.get_extra_info("ssl_object")
+    der_cert = ssl_object.getpeercert(binary_form=True)
+    fingerprint = fingerprint_from_der(der_cert)
+
+    if not is_trusted(address, fingerprint):
+        writer.close()
+        await writer.wait_closed()
+        return json.dumps({
+            "ok": False,
+            "error": f"{address} is not paired yet (fingerprint {fingerprint}). Pair it first with connect.",
+        })
 
     writer.write((json.dumps(request) + "\n").encode("utf-8"))
     await writer.drain()
@@ -334,6 +348,11 @@ class EngineInterface(ServiceInterface):
     def TrustDevice(self, address: "s", fingerprint: "s") -> "s":
         trust_device(address, fingerprint)
         return json.dumps({"ok": True})
+
+    @method()
+    def GetTrustedFingerprint(self, address: "s") -> "s":
+        fingerprint = get_trusted_fingerprint(address)
+        return json.dumps({"fingerprint": fingerprint})
 
     @method()
     async def DeviceGet(self, address: "s", category: "s", field: "s", extra: "s") -> "s":

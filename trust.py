@@ -42,6 +42,11 @@ def is_trusted(address, fingerprint):
     return data.get(address) == fingerprint
 
 
+def get_trusted_fingerprint(address):
+    data = _load()
+    return data.get(address)
+
+
 def trust(address, fingerprint):
     data = _load()
     data[address] = fingerprint
