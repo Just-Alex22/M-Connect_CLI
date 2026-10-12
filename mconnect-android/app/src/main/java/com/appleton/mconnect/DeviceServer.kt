@@ -31,12 +31,17 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
+import javax.net.ssl.SSLServerSocket
 
 class DeviceServer(private val context: Context) {
 
     fun start(port: Int) {
         CoroutineScope(Dispatchers.IO).launch {
-            val serverSocket = ServerSocket(port)
+            val sslContext = Identity.buildServerSslContext(context)
+            val serverSocket = sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket
+            serverSocket.needClientAuth = false
+            serverSocket.wantClientAuth = false
+
             while (isActive) {
                 try {
                     val client = serverSocket.accept()
