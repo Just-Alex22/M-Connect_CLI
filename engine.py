@@ -193,7 +193,7 @@ async def get_peer_fingerprint(address, port):
             address, port, ssl=build_client_ssl_context()
         )
     except (OSError, ssl.SSLError) as e:
-        return None, str(e)
+        return None, str(e) or e.__class__.__name__
 
     ssl_object = writer.get_extra_info("ssl_object")
     der_cert = ssl_object.getpeercert(binary_form=True)
