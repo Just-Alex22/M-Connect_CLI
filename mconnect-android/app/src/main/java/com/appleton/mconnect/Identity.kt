@@ -14,7 +14,6 @@ import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.SecureRandom
-import java.security.Security
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
@@ -25,11 +24,7 @@ import javax.net.ssl.SSLContext
 
 object Identity {
 
-    init {
-        if (Security.getProvider("BC") == null) {
-            Security.addProvider(BouncyCastleProvider())
-        }
-    }
+    private val bcProvider = BouncyCastleProvider()
 
     private const val CERT_VALID_DAYS = 3650L
     private const val KEY_ALIAS = "mconnect"
@@ -75,8 +70,8 @@ object Identity {
         val serial = BigInteger(64, SecureRandom())
 
         val builder = JcaX509v3CertificateBuilder(subject, serial, now, notAfter, subject, keyPair.public)
-        val signer = JcaContentSignerBuilder("SHA256WithRSA").setProvider("BC").build(keyPair.private)
-        val cert = JcaX509CertificateConverter().setProvider("BC").getCertificate(builder.build(signer))
+        val signer = JcaContentSignerBuilder("SHA256WithRSA").setProvider(bcProvider).build(keyPair.private)
+        val cert = JcaX509CertificateConverter().setProvider(bcProvider).getCertificate(builder.build(signer))
 
         keyFile.writeBytes(keyPair.private.encoded)
         certFile.writeBytes(cert.encoded)
