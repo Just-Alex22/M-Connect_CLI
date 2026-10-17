@@ -17,6 +17,7 @@ import android.os.Vibrator
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -37,16 +38,23 @@ class DeviceServer(private val context: Context) {
 
     fun start(port: Int) {
         CoroutineScope(Dispatchers.IO).launch {
-            val sslContext = Identity.buildServerSslContext(context)
-            val serverSocket = sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket
-            serverSocket.needClientAuth = false
-            serverSocket.wantClientAuth = false
+            val serverSocket = try {
+                val sslContext = Identity.buildServerSslContext(context)
+                (sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket).apply {
+                    needClientAuth = false
+                    wantClientAuth = false
+                }
+            } catch (e: Exception) {
+                Log.e("DeviceServer", "No se pudo arrancar el servidor TLS en el puerto $port", e)
+                return@launch
+            }
 
             while (isActive) {
                 try {
                     val client = serverSocket.accept()
                     launch { handleClient(client) }
                 } catch (e: Exception) {
+                    Log.e("DeviceServer", "Error aceptando una conexion", e)
                 }
             }
         }
@@ -68,6 +76,7 @@ class DeviceServer(private val context: Context) {
                     writer.println(response.toString())
                 }
             } catch (e: Exception) {
+                Log.e("DeviceServer", "Error manejando cliente ${socket.inetAddress}", e)
             } finally {
                 socket.close()
             }
