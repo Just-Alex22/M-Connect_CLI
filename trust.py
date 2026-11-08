@@ -19,6 +19,9 @@
 
 import os
 import json
+import ssl
+
+from identity import fingerprint_from_der
 
 TRUST_DIR = os.path.expanduser("~/.config/mconnect")
 TRUST_PATH = os.path.join(TRUST_DIR, "trusted_devices.json")
@@ -37,19 +40,47 @@ def _save(data):
         json.dump(data, f, indent=2)
 
 
+def _entry(value):
+    if isinstance(value, str):
+        return {"fingerprint": value, "certificate": None}
+    return value
+
+
 def is_trusted(address, fingerprint):
-    data = _load()
-    return data.get(address) == fingerprint
+    value = _load().get(address)
+    return value is not None and _entry(value)["fingerprint"] == fingerprint
 
 
 def get_trusted_fingerprint(address):
-    data = _load()
-    return data.get(address)
+    value = _load().get(address)
+    return None if value is None else _entry(value)["fingerprint"]
 
 
-def trust(address, fingerprint):
+def has_trusted_certificate(address):
+    value = _load().get(address)
+    return value is not None and _entry(value)["certificate"] is not None
+
+
+def is_fingerprint_trusted(fingerprint):
+    return any(_entry(value)["fingerprint"] == fingerprint for value in _load().values())
+
+
+def trusted_certificates():
+    entries = [_entry(value) for value in _load().values()]
+    return [entry["certificate"] for entry in entries if entry["certificate"]]
+
+
+def trust(address, fingerprint, certificate=None):
+    if certificate is not None:
+        der_cert = ssl.PEM_cert_to_DER_cert(certificate)
+        if fingerprint_from_der(der_cert) != fingerprint:
+            raise ValueError("El certificado no corresponde al fingerprint indicado")
     data = _load()
-    data[address] = fingerprint
+    if certificate is None and address in data:
+        existing = _entry(data[address])
+        if existing["fingerprint"] == fingerprint:
+            certificate = existing["certificate"]
+    data[address] = {"fingerprint": fingerprint, "certificate": certificate}
     _save(data)
 
 
