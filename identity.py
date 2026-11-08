@@ -123,6 +123,7 @@ def build_server_ssl_context():
 def build_client_ssl_context():
     load_or_create_identity()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_cert_chain(certfile=CERT_PATH, keyfile=KEY_PATH)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     return context
