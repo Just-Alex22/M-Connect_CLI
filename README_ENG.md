@@ -248,6 +248,9 @@ Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
 | `DeviceGet` | `(address: s, category: s, field: s, extra: s) → s` | Returns a **JSON string** (avoids D-Bus struct typing entirely — result shapes vary too much by category to model them as a fixed struct) |
 | `DeviceSet` | `(address: s, category: s, value: s) → s` | Returns a JSON string, same reason |
 | `DeviceFile` | `(address: s, local_path: s, subdir: s) → s` | Reads the local file, base64-encodes it, forwards it; returns a JSON string |
+| `GetFingerprint` | `(address: s, port: i) → s` | Connects over TLS and returns a JSON string with the device certificate fingerprint (`{"ok": true, "fingerprint": "..."}`). The certificate is kept pending in memory for about 5 minutes so `TrustDevice` can store it |
+| `TrustDevice` | `(address: s, fingerprint: s) → s` | Pairs the device: stores its fingerprint and its full certificate. Requires a previous `GetFingerprint` for the same address and fingerprint; if there is no pending certificate it returns `{"ok": false, "error": "..."}` |
+| `GetTrustedFingerprint` | `(address: s) → s` | Returns a JSON string with the paired fingerprint for that address (`null` if there is none) |
  
 ---
 

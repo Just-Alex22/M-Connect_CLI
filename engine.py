@@ -44,6 +44,7 @@ BROADCAST_ADDR = "255.255.255.255"
 ANNOUNCE_INTERVAL_SECONDS = 2
 DEVICE_TIMEOUT_SECONDS = 6
 CLEANUP_INTERVAL_SECONDS = 2
+PENDING_CERTIFICATE_TTL_SECONDS = 300
 
 BUS_NAME = "com.appleton.MConnect"
 OBJECT_PATH = "/com/appleton/MConnect/Engine"
@@ -52,6 +53,7 @@ DEVICE_ID = load_or_create_device_id()
 DEVICE_NAME = platform.node()
 
 devices = {}
+pending_certificates = {}
 
 
 def build_identity_packet():
@@ -186,6 +188,23 @@ async def start_exec_server():
     async with server:
         await server.serve_forever()
 
+def remember_pending_certificate(address, fingerprint, certificate):
+    now = time.monotonic()
+    expired = [key for key, (_, expires) in pending_certificates.items() if expires <= now]
+    for key in expired:
+        del pending_certificates[key]
+    pending_certificates[(address, fingerprint)] = (certificate, now + PENDING_CERTIFICATE_TTL_SECONDS)
+
+
+def take_pending_certificate(address, fingerprint):
+    entry = pending_certificates.pop((address, fingerprint), None)
+    if entry is None:
+        return None
+    certificate, expires = entry
+    if expires <= time.monotonic():
+        return None
+    return certificate
+
 
 async def get_peer_fingerprint(address, port):
     try:
@@ -198,6 +217,7 @@ async def get_peer_fingerprint(address, port):
     ssl_object = writer.get_extra_info("ssl_object")
     der_cert = ssl_object.getpeercert(binary_form=True)
     fingerprint = fingerprint_from_der(der_cert)
+    remember_pending_certificate(address, fingerprint, ssl.DER_cert_to_PEM_cert(der_cert))
 
     writer.close()
     await writer.wait_closed()
@@ -346,7 +366,13 @@ class EngineInterface(ServiceInterface):
 
     @method()
     def TrustDevice(self, address: "s", fingerprint: "s") -> "s":
-        trust_device(address, fingerprint)
+        certificate = take_pending_certificate(address, fingerprint)
+        if certificate is None:
+            return json.dumps({
+                "ok": False,
+                "error": "There is no pending certificate for this device. Run connect again.",
+            })
+        trust_device(address, fingerprint, certificate)
         return json.dumps({"ok": True})
 
     @method()

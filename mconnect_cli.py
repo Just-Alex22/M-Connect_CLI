@@ -602,6 +602,13 @@ async def handle_connect(args, state):
     trusted_fingerprint = await state["engine"].get_trusted_fingerprint(ip)
 
     if trusted_fingerprint == fingerprint:
+        completed = await state["engine"].trust_device(ip, fingerprint)
+        if not completed.get("ok"):
+            print(colorize(
+                f"No se pudo guardar el certificado de {ip}: {completed.get('error', 'error desconocido')}",
+                Palette.ERROR,
+            ))
+            return
         state["connected_address"] = ip
         print(colorize(f"Conectado a {ip}", Palette.SUCCESS))
         return
@@ -617,7 +624,13 @@ async def handle_connect(args, state):
         print(colorize("Emparejamiento cancelado.", Palette.MUTED))
         return
 
-    await state["engine"].trust_device(ip, fingerprint)
+    paired = await state["engine"].trust_device(ip, fingerprint)
+    if not paired.get("ok"):
+        print(colorize(
+            f"No se pudo emparejar con {ip}: {paired.get('error', 'error desconocido')}",
+            Palette.ERROR,
+        ))
+        return
     state["connected_address"] = ip
     print(colorize(f"Emparejado y conectado a {ip}", Palette.SUCCESS))
 
