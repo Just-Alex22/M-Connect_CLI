@@ -8,12 +8,14 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.File
 import java.math.BigInteger
+import java.net.Socket
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.SecureRandom
+import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
@@ -21,6 +23,10 @@ import java.util.Date
 import java.util.UUID
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 object Identity {
 
@@ -28,6 +34,17 @@ object Identity {
 
     private const val CERT_VALID_DAYS = 3650L
     private const val KEY_ALIAS = "mconnect"
+
+    private val acceptAnyClientCertificate = object : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+        }
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            throw CertificateException("Este contexto solo acepta conexiones entrantes")
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+    }
 
     private fun deviceIdFile(context: Context) = File(context.filesDir, "device_id")
     private fun keyFile(context: Context) = File(context.filesDir, "identity_key.der")
@@ -96,7 +113,16 @@ object Identity {
         keyManagerFactory.init(keyStore, password)
 
         val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(keyManagerFactory.keyManagers, null, null)
+        sslContext.init(keyManagerFactory.keyManagers, arrayOf<TrustManager>(acceptAnyClientCertificate), null)
         return sslContext
+    }
+
+    fun peerFingerprint(socket: Socket): String? {
+        return try {
+            val certificate = (socket as SSLSocket).session.peerCertificates.firstOrNull() as? X509Certificate
+            certificate?.let { certFingerprint(it) }
+        } catch (e: SSLPeerUnverifiedException) {
+            null
+        }
     }
 }

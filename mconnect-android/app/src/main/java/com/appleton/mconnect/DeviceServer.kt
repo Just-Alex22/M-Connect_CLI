@@ -42,7 +42,7 @@ class DeviceServer(private val context: Context) {
                 val sslContext = Identity.buildServerSslContext(context)
                 (sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket).apply {
                     needClientAuth = false
-                    wantClientAuth = false
+                    wantClientAuth = true
                 }
             } catch (e: Exception) {
                 Log.e("DeviceServer", "No se pudo arrancar el servidor TLS en el puerto $port", e)
@@ -63,6 +63,8 @@ class DeviceServer(private val context: Context) {
     private suspend fun handleClient(socket: Socket) {
         withContext(Dispatchers.IO) {
             try {
+                val fingerprint = Identity.peerFingerprint(socket)
+                Log.i("DeviceServer", "Cliente ${socket.inetAddress} con huella ${fingerprint ?: "sin certificado"}")
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
                 val writer = PrintWriter(socket.getOutputStream(), true)
 
