@@ -71,7 +71,9 @@ class DeviceServer(private val context: Context) {
                 val line = reader.readLine() ?: return@withContext
                 val request = JSONObject(line)
 
-                if (request.optString("type") == "watch") {
+                if (request.optString("type") == "pair") {
+                    writer.println(handlePair(socket.inetAddress.hostAddress ?: "unknown", fingerprint).toString())
+                } else if (request.optString("type") == "watch") {
                     handleWatch(request.optString("category"), writer)
                 } else {
                     val response = handleRequest(request)
@@ -94,6 +96,25 @@ class DeviceServer(private val context: Context) {
             "set" -> handleSet(category, request)
             "file" -> handleFile(request)
             else -> errorResult("get_result", "unknown request type")
+        }
+    }
+
+    private fun handlePair(address: String, fingerprint: String?): JSONObject {
+        if (fingerprint == null) {
+            return errorResult("pair_result", "client certificate required")
+        }
+        if (TrustStore.isTrusted(context, fingerprint)) {
+            return okResult("pair_result").put("status", "already_paired")
+        }
+        return when (PairingPrompt.request(address, fingerprint)) {
+            PairingPrompt.Answer.ACCEPTED -> {
+                TrustStore.trust(context, fingerprint)
+                okResult("pair_result").put("status", "paired")
+            }
+            PairingPrompt.Answer.REJECTED -> errorResult("pair_result", "pairing rejected on the phone")
+            PairingPrompt.Answer.TIMEOUT -> errorResult("pair_result", "pairing request timed out")
+            PairingPrompt.Answer.UNAVAILABLE -> errorResult("pair_result", "open the M-Connect app on the phone and try again")
+            PairingPrompt.Answer.BUSY -> errorResult("pair_result", "another pairing request is pending on the device")
         }
     }
 

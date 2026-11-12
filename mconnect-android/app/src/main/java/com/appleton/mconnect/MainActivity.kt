@@ -7,6 +7,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ListView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private var connectedAddress: String? = null
     private val announceIntervalMs = 2000L
     private var announceJob: Job? = null
+    private var pairingDialog: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +85,35 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         announceJob?.cancel()
+    }
+    override fun onResume() {
+        super.onResume()
+        PairingPrompt.presenter = { address, fingerprint, respond ->
+            runOnUiThread { showPairingDialog(address, fingerprint, respond) }
+            val dismiss: () -> Unit = { runOnUiThread { pairingDialog?.dismiss() } }
+            dismiss
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        PairingPrompt.presenter = null
+        pairingDialog?.dismiss()
+    }
+
+    private fun showPairingDialog(address: String, fingerprint: String, respond: PairingResponder) {
+        if (isFinishing || isDestroyed) {
+            respond(false)
+            return
+        }
+        pairingDialog = AlertDialog.Builder(this)
+            .setTitle("Pairing request")
+            .setMessage("The computer at $address wants to pair with this phone.\n\nFingerprint:\n$fingerprint\n\nAccept only if it matches the one shown on your computer.")
+            .setCancelable(false)
+            .setPositiveButton("Pair") { _, _ -> respond(true) }
+            .setNegativeButton("Reject") { _, _ -> respond(false) }
+            .setOnDismissListener { respond(false) }
+            .show()
     }
 
     private fun startAnnouncing() {

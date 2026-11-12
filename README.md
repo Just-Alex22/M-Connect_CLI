@@ -57,7 +57,7 @@ flowchart LR
 
 **`mconnect_cli.py`** es un cliente delgado. Arranca `engine.py` solo si no está corriendo, mantiene una conexión D-Bus persistente durante toda la sesión y traduce los comandos escritos en llamadas D-Bus. Dos comandos (el probe de `conectar` y el stream en vivo de `vigilar-dispositivo`) hablan directamente con el dispositivo por TCP en vez de pasar por el engine, un atajo deliberado mientras esa parte del diseño del engine sigue siendo básica.
 
-**La app de Android** corre `DeviceServer.kt`, un pequeño servidor TCP que responde a pedidos `get`/`set`/`file`/`watch`, más un broadcast de identidad en segundo plano para que el engine la pueda descubrir. Leer info de multimedia y notificaciones requiere que el usuario le otorgue a la app el permiso especial de **Acceso a Notificaciones** de Android (el mismo requisito que tiene KDE Connect real).
+**La app de Android** corre `DeviceServer.kt`, un pequeño servidor TCP que responde a pedidos `get`/`set`/`file`/`watch`/`pair`, más un broadcast de identidad en segundo plano para que el engine la pueda descubrir. Leer info de multimedia y notificaciones requiere que el usuario le otorgue a la app el permiso especial de **Acceso a Notificaciones** de Android (el mismo requisito que tiene KDE Connect real).
 
 ## Por qué D-Bus, por qué asyncio, por qué sin GLib
 
@@ -233,6 +233,15 @@ Transferencia de archivos (contenido codificado en base64 inline: simple, pero n
  
 Los archivos terminan en `Download/M-Connect/<subcarpeta>/` (o `Download/M-Connect/` sin subcarpeta) vía la API `MediaStore` de Android.
  
+Emparejamiento (el dispositivo le pide confirmación al usuario, así que la respuesta puede tardar hasta 60 segundos):
+
+```json
+→ {"type": "pair"}
+← {"type": "pair_result", "ok": true, "status": "paired"}
+```
+
+El dispositivo toma el certificado del PC del propio handshake TLS (el PC lo presenta como certificado de cliente), muestra su huella en un diálogo y solo la guarda si el usuario acepta. `status` es `"already_paired"` si esa huella ya estaba emparejada. Ante cualquier fallo, `ok` es `false` y `error` explica la causa: el usuario rechazó, venció el tiempo de espera, la app no está abierta en el teléfono o ya hay otra solicitud pendiente.
+
 ### Interfaz D-Bus del engine
  
 Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/Engine`:

@@ -58,7 +58,7 @@ flowchart LR
 
 **`mconnect_cli.py`** is a thin client. It starts `engine.py` only if it isn't already running, keeps a persistent D-Bus connection open for the whole session, and translates typed commands into D-Bus calls. Two commands (the `conectar` probe and the live `vigilar-dispositivo` stream) talk directly to the phone over TCP instead of going through the engine, a deliberate shortcut while that part of the engine's design is still basic.
 
-**The Android app** runs `DeviceServer.kt`, a small TCP server that answers `get`/`set`/`file`/`watch` requests, plus a background identity broadcast so the engine can discover it. Reading media and notification info requires the user to grant the app Android's special **Notification Access** permission (the same requirement the real KDE Connect has).
+**The Android app** runs `DeviceServer.kt`, a small TCP server that answers `get`/`set`/`file`/`watch`/`pair` requests, plus a background identity broadcast so the engine can discover it. Reading media and notification info requires the user to grant the app Android's special **Notification Access** permission (the same requirement the real KDE Connect has).
 
 ## Why D-Bus, why asyncio, why no GLib
 
@@ -237,6 +237,15 @@ File transfer (content base64-encoded inline: simple, but not efficient for very
  
 Files end up in `Download/M-Connect/<subfolder>/` (or `Download/M-Connect/` with no subfolder) via Android's `MediaStore` API.
  
+Pairing (the device asks the user for confirmation, so the reply can take up to 60 seconds):
+
+```json
+→ {"type": "pair"}
+← {"type": "pair_result", "ok": true, "status": "paired"}
+```
+
+The device takes the PC certificate from the TLS handshake itself (the PC presents it as a client certificate), shows its fingerprint in a dialog, and only stores it if the user accepts. `status` is `"already_paired"` if that fingerprint was already paired. On any failure, `ok` is `false` and `error` explains why: the user rejected, the wait timed out, the app is not open on the phone, or another request is already pending.
+
 ### Engine D-Bus interface
  
 Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
