@@ -32,7 +32,7 @@ import atexit
 import ssl
 
 from dbus_next.aio import MessageBus
-from identity import build_client_ssl_context, fingerprint_from_der
+from identity import build_client_ssl_context, fingerprint_from_der, local_fingerprint
 from trust import is_trusted
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
@@ -175,6 +175,9 @@ class EngineClient:
         raw = await self._call("call_trust_device", address, fingerprint)
         return json.loads(raw)
 
+    async def pair_device(self, address):
+        raw = await self._call("call_pair_device", address)
+        return json.loads(raw)
 
 def stop_engine():
     global engine_process
@@ -575,6 +578,23 @@ async def handle_discover(args, state):
     rows = [[name, address, "disponible"] for name, address in devices]
     print_table(headers, rows)
 
+async def complete_pairing(ip, state):
+    print(colorize(f"Fingerprint de este PC: {local_fingerprint()}", Palette.TITLE))
+    print(colorize("Si el dispositivo pide confirmación, verifica que ese fingerprint coincida y acepta.", Palette.MUTED))
+
+    try:
+        result = await with_spinner("Esperando al dispositivo...", state["engine"].pair_device(ip))
+    except EngineUnavailable as e:
+        print_engine_unavailable(e)
+        return None
+
+    if not result.get("ok"):
+        print(colorize(f"El dispositivo no confió en este PC: {result.get('error', 'error desconocido')}", Palette.ERROR))
+        print(colorize("El emparejamiento quedó incompleto. Ejecutá conectar de nuevo para reintentar.", Palette.MUTED))
+        return None
+
+    return result.get("status", "paired")
+
 
 async def handle_connect(args, state):
     if len(args) != 1:
@@ -609,8 +629,14 @@ async def handle_connect(args, state):
                 Palette.ERROR,
             ))
             return
+        status = await complete_pairing(ip, state)
+        if status is None:
+            return
         state["connected_address"] = ip
-        print(colorize(f"Conectado a {ip}", Palette.SUCCESS))
+        if status == "paired":
+            print(colorize(f"Emparejado y conectado a {ip}", Palette.SUCCESS))
+        else:
+            print(colorize(f"Conectado a {ip}", Palette.SUCCESS))
         return
 
     if trusted_fingerprint is not None:
@@ -630,6 +656,9 @@ async def handle_connect(args, state):
             f"No se pudo emparejar con {ip}: {paired.get('error', 'error desconocido')}",
             Palette.ERROR,
         ))
+        return
+    status = await complete_pairing(ip, state)
+    if status is None:
         return
     state["connected_address"] = ip
     print(colorize(f"Emparejado y conectado a {ip}", Palette.SUCCESS))

@@ -146,7 +146,7 @@ python3 engine.py
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ayuda [comando]`                          | Man-page-style help. With no arguments, lists all commands; `ayuda <comando>` shows that command's full page.                |
 | `descubrir`                                | Lists the devices currently announcing themselves on the local network.                                                      |
-| `conectar <ip>`                            | Verifies that the device is actually reachable (probes TCP port 17162) before marking it as the active device.               |
+| `conectar <ip>`                            | Connects over TLS, shows you the device fingerprint to confirm the first time, and completes the mutual pairing: the phone asks for its own confirmation using this PC's fingerprint. Only then does it mark the device as the active one. |
 | `obtener-dispositivo <categoria> <campo>`  | Reads a value from the connected device. See categories below.                                                               |
 | `ajustar-dispositivo <categoria> <valor>`  | Changes something on the connected device. See categories below.                                                             |
 | `vigilar-dispositivo notificaciones`       | Shows new notifications live as they arrive, until Ctrl+C. Connects directly to the device.                                  |
@@ -244,7 +244,7 @@ Pairing (the device asks the user for confirmation, so the reply can take up to 
 ← {"type": "pair_result", "ok": true, "status": "paired"}
 ```
 
-The device takes the PC certificate from the TLS handshake itself (the PC presents it as a client certificate), shows its fingerprint in a dialog, and only stores it if the user accepts. `status` is `"already_paired"` if that fingerprint was already paired. On any failure, `ok` is `false` and `error` explains why: the user rejected, the wait timed out, the app is not open on the phone, or another request is already pending.
+The device takes the PC certificate from the TLS handshake itself (the PC presents it as a client certificate), shows its fingerprint in a dialog, and only stores it if the user accepts. `status` is `"already_paired"` if that fingerprint was already paired. On any failure, `ok` is `false` and `error` explains why: the user rejected, the wait timed out, the app is not open on the phone, or another request is already pending. `conectar` sends it automatically at the end of pairing.
 
 ### Engine D-Bus interface
  
@@ -260,7 +260,8 @@ Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
 | `GetFingerprint` | `(address: s, port: i) → s` | Connects over TLS and returns a JSON string with the device certificate fingerprint (`{"ok": true, "fingerprint": "..."}`). The certificate is kept pending in memory for about 5 minutes so `TrustDevice` can store it |
 | `TrustDevice` | `(address: s, fingerprint: s) → s` | Pairs the device: stores its fingerprint and its full certificate. Requires a previous `GetFingerprint` for the same address and fingerprint; if there is no pending certificate it returns `{"ok": false, "error": "..."}` |
 | `GetTrustedFingerprint` | `(address: s) → s` | Returns a JSON string with the paired fingerprint for that address (`null` if there is none) |
- 
+| `PairDevice` | `(address: s) → s` | Sends the phone the `pair` request so it trusts this PC and returns its reply as a JSON string. The phone must already be paired on the PC side (`TrustDevice`). Waits up to 75 seconds for the user's confirmation on the phone |
+
 ---
 
 

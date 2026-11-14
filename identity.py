@@ -111,6 +111,11 @@ def fingerprint_from_der(der_bytes):
     cert = x509.load_der_x509_certificate(der_bytes)
     return cert_fingerprint_display(cert)
 
+def local_fingerprint():
+    load_or_create_identity()
+    with open(CERT_PATH) as f:
+        return fingerprint_from_der(ssl.PEM_cert_to_DER_cert(f.read()))
+
 
 def build_server_ssl_context():
     load_or_create_identity()

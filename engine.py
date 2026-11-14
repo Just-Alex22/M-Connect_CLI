@@ -45,6 +45,7 @@ ANNOUNCE_INTERVAL_SECONDS = 2
 DEVICE_TIMEOUT_SECONDS = 6
 CLEANUP_INTERVAL_SECONDS = 2
 PENDING_CERTIFICATE_TTL_SECONDS = 300
+PAIR_RESPONSE_TIMEOUT_SECONDS = 75
 
 BUS_NAME = "com.appleton.MConnect"
 OBJECT_PATH = "/com/appleton/MConnect/Engine"
@@ -304,7 +305,7 @@ async def device_file(address, local_path, subdir=""):
     return await _call_phone_device(address, request)
 
 
-async def _call_phone_device(address, request):
+async def _call_phone_device(address, request, timeout=None):
     try:
         reader, writer = await asyncio.open_connection(
             address, PHONE_DEVICE_PORT, ssl=build_client_ssl_context()
@@ -332,7 +333,12 @@ async def _call_phone_device(address, request):
     writer.write((json.dumps(request) + "\n").encode("utf-8"))
     await writer.drain()
 
-    line = await reader.readline()
+    try:
+        line = await asyncio.wait_for(reader.readline(), timeout)
+    except asyncio.TimeoutError:
+        writer.close()
+        await writer.wait_closed()
+        return json.dumps({"ok": False, "error": "timed out waiting for the device"})
     writer.close()
     await writer.wait_closed()
 
@@ -392,6 +398,10 @@ class EngineInterface(ServiceInterface):
     @method()
     async def DeviceFile(self, address: "s", local_path: "s", subdir: "s") -> "s":
         return await device_file(address, local_path, subdir)
+
+    @method()
+    async def PairDevice(self, address: "s") -> "s":
+        return await _call_phone_device(address, {"type": "pair"}, PAIR_RESPONSE_TIMEOUT_SECONDS)
 
 
 async def start_dbus_service():

@@ -142,7 +142,7 @@ python3 engine.py
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ayuda [comando]`                          | Ayuda estilo man page. Sin argumentos, lista todos los comandos; `ayuda <comando>` muestra la página completa de ese comando. |
 | `descubrir`                                | Lista los dispositivos que se están anunciando en la red local.                                                              |
-| `conectar <ip>`                            | Verifica que el dispositivo sea realmente alcanzable (prueba el puerto TCP 17162) antes de marcarlo como dispositivo activo. |
+| `conectar <ip>`                            | Se conecta por TLS, te muestra el fingerprint del dispositivo para que lo confirmes la primera vez y completa el emparejamiento mutuo: el teléfono pide su propia confirmación con el fingerprint de este PC. Recién entonces lo marca como dispositivo activo. |
 | `obtener-dispositivo <categoria> <campo>`  | Lee un valor del dispositivo conectado. Ver categorías abajo.                                                                    |
 | `ajustar-dispositivo <categoria> <valor>`  | Cambia algo en el dispositivo conectado. Ver categorías abajo.                                                                   |
 | `vigilar-dispositivo notificaciones`       | Muestra notificaciones nuevas en vivo a medida que llegan, hasta Ctrl+C. Se conecta directamente al dispositivo.                      |
@@ -240,7 +240,7 @@ Emparejamiento (el dispositivo le pide confirmación al usuario, así que la res
 ← {"type": "pair_result", "ok": true, "status": "paired"}
 ```
 
-El dispositivo toma el certificado del PC del propio handshake TLS (el PC lo presenta como certificado de cliente), muestra su huella en un diálogo y solo la guarda si el usuario acepta. `status` es `"already_paired"` si esa huella ya estaba emparejada. Ante cualquier fallo, `ok` es `false` y `error` explica la causa: el usuario rechazó, venció el tiempo de espera, la app no está abierta en el teléfono o ya hay otra solicitud pendiente.
+El dispositivo toma el certificado del PC del propio handshake TLS (el PC lo presenta como certificado de cliente), muestra su huella en un diálogo y solo la guarda si el usuario acepta. `status` es `"already_paired"` si esa huella ya estaba emparejada. Ante cualquier fallo, `ok` es `false` y `error` explica la causa: el usuario rechazó, venció el tiempo de espera, la app no está abierta en el dispositivo o ya hay otra solicitud pendiente. `conectar` lo envía automáticamente al final del emparejamiento.
 
 ### Interfaz D-Bus del engine
  
@@ -256,6 +256,7 @@ Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/En
 | `GetFingerprint` | `(address: s, port: i) → s` | Se conecta por TLS y devuelve un string JSON con el fingerprint del certificado del dispositivo (`{"ok": true, "fingerprint": "..."}`). El certificado queda pendiente en memoria unos 5 minutos para que `TrustDevice` lo guarde |
 | `TrustDevice` | `(address: s, fingerprint: s) → s` | Empareja el dispositivo: guarda su fingerprint y su certificado completo. Requiere un `GetFingerprint` previo para la misma dirección y el mismo fingerprint; si no hay certificado pendiente devuelve `{"ok": false, "error": "..."}` |
 | `GetTrustedFingerprint` | `(address: s) → s` | Devuelve un string JSON con el fingerprint emparejado de esa dirección (`null` si no hay ninguno) |
+| `PairDevice` | `(address: s) → s` | Le envía al teléfono la petición `pair` para que confíe en este PC y devuelve su respuesta como string JSON. El teléfono ya tiene que estar emparejado desde el lado del PC (`TrustDevice`). Espera hasta 75 segundos la confirmación del usuario en el teléfono |
  
 ---
 
