@@ -13,7 +13,7 @@
 **M-Connect** ("Musen" + "Connect" - *musen* 無線 es japonés para "inalámbrico") es una CLi diseñada para ser simple, bonita y liviana. Este proyecto no busca ser una alternativa a programas como KDE Connect o una continuación del proyecto Y-Connect, sino una base sólida que se puede usar para proyectos de este estilo en el futuro: un daemon de PC, un cliente de línea de comandos y una app de Android que permiten que una computadora y un móvil se descubran en la red local y se hablen entre sí. 
 
 > [!CAUTION]
-> Este proyecto se encuentra en desarrollo; su funcionamiento puede cambiar con el tiempo. Este programa no cuenta con autenticación ni emparejamiento en ningún canal; lee [Limitaciones y seguridad conocidas](#limitaciones-y-seguridad-conocidas) antes de usar esto en algo que no sea una red local de confianza.
+> Este proyecto se encuentra en desarrollo; su funcionamiento puede cambiar con el tiempo. El dispositivo solo atiende a PCs emparejadas, pero el servidor `exec` de la PC todavía no autentica a quien se conecta; lee [Limitaciones y seguridad conocidas](#limitaciones-y-seguridad-conocidas) antes de usar esto en algo que no sea una red local de confianza.
 
 ---
 
@@ -203,6 +203,12 @@ Solo corre **entre engines** (PC↔PC); el celular no tiene servidor de exec, po
  
 ### Control del celular desde la PC: TCP, puerto `17162` (`DeviceServer.kt`)
  
+El canal va cifrado con TLS y exige certificado de cliente. Salvo `pair`, todo pedido solo se atiende si la huella del certificado del PC está emparejada; en caso contrario el dispositivo responde y cierra la conexión:
+
+```json
+← {"type": "auth_result", "ok": false, "error": "this computer is not paired with the device, run connect to pair it"}
+```
+
 `get`/`set` de un solo viaje:
  
 ```json
@@ -265,7 +271,7 @@ Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/En
  
 Son carencias registradas, no descuidos: léelas antes de usar esto en algo que no sea una LAN de confianza:
  
-- **No hay autenticación ni emparejamiento en ningún canal.** Cualquier dispositivo en la red local puede ahora mismo llamar a `exec` en una PC corriendo `engine.py`, o mandar pedidos `device-get`/`device-set` a un celular corriendo la app. No existe todavía un equivalente al emparejamiento con certificados TLS de KDE Connect u otras apps. **No expongas esto más allá de una red local de confianza.**
+- **El servidor `exec` de la PC (puerto 17161) todavía no autentica a quien se conecta.** El dispositivo ya exige emparejamiento (TLS con certificado de cliente y confirmación del usuario en ambos lados), pero cualquier equipo de la red local que hable TLS puede llamar a `exec` en una PC corriendo `engine.py`. **No expongas esto más allá de una red local de confianza.**
 - **La transferencia de archivos es base64 sobre una línea JSON**, lo cual es simple pero infla el tamaño en ~33% y mantiene el archivo completo en memoria en ambos lados. Está bien para prototipar; un protocolo binario con prefijo de longitud sería el arreglo real para archivos grandes.
 - **`engine.py` no está autenticado ni aislado por la naturaleza de la función de exec**, trata cualquier máquina que lo corra como alcanzable y controlable por cualquier otra cosa en el mismo segmento de LAN.
 ---

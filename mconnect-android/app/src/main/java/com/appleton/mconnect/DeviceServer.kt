@@ -41,8 +41,7 @@ class DeviceServer(private val context: Context) {
             val serverSocket = try {
                 val sslContext = Identity.buildServerSslContext(context)
                 (sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket).apply {
-                    needClientAuth = false
-                    wantClientAuth = true
+                    needClientAuth = true
                 }
             } catch (e: Exception) {
                 Log.e("DeviceServer", "No se pudo arrancar el servidor TLS en el puerto $port", e)
@@ -65,11 +64,17 @@ class DeviceServer(private val context: Context) {
             try {
                 val fingerprint = Identity.peerFingerprint(socket)
                 Log.i("DeviceServer", "Cliente ${socket.inetAddress} con huella ${fingerprint ?: "sin certificado"}")
+
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
                 val writer = PrintWriter(socket.getOutputStream(), true)
 
                 val line = reader.readLine() ?: return@withContext
                 val request = JSONObject(line)
+
+                if (request.optString("type") != "pair" && !isPaired(fingerprint)) {
+                    writer.println(errorResult("auth_result", "this computer is not paired with the device, run connect to pair it").toString())
+                    return@withContext
+                }
 
                 if (request.optString("type") == "pair") {
                     writer.println(handlePair(socket.inetAddress.hostAddress ?: "unknown", fingerprint).toString())
@@ -85,6 +90,10 @@ class DeviceServer(private val context: Context) {
                 socket.close()
             }
         }
+    }
+
+    private fun isPaired(fingerprint: String?): Boolean {
+        return fingerprint != null && TrustStore.isTrusted(context, fingerprint)
     }
 
     private fun handleRequest(request: JSONObject): JSONObject {
@@ -114,7 +123,7 @@ class DeviceServer(private val context: Context) {
             PairingPrompt.Answer.REJECTED -> errorResult("pair_result", "pairing rejected on the phone")
             PairingPrompt.Answer.TIMEOUT -> errorResult("pair_result", "pairing request timed out")
             PairingPrompt.Answer.UNAVAILABLE -> errorResult("pair_result", "open the M-Connect app on the phone and try again")
-            PairingPrompt.Answer.BUSY -> errorResult("pair_result", "another pairing request is pending on the device")
+            PairingPrompt.Answer.BUSY -> errorResult("pair_result", "another pairing request is pending on the phone")
         }
     }
 

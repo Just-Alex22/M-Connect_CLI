@@ -14,7 +14,7 @@
 **M-Connect** ("Musen" + "Connect" - *musen* 無線 is Japanese for "wireless") is a CLI designed to be simple, beautiful, and lightweight. This project does not aim to be an alternative to programs like KDE Connect, nor a continuation of the Y-Connect project, but rather a solid foundation that can be used for projects of this kind in the future: a PC daemon, a command-line client, and an Android app that let a computer and a phone discover each other on the local network and talk to one another.
 
 > [!CAUTION]
-> This project is under development; its behavior may change over time. This program has no authentication or pairing on any channel; read [Known limitations and security](#known-limitations-and-security) before using it on anything other than a trusted local network.
+> This project is under development; its behavior may change over time. The device only serves paired PCs, but the PC's `exec` server still does not authenticate who connects to it; read [Known limitations and security](#known-limitations-and-security) before using it on anything other than a trusted local network.
 
 ---
 
@@ -206,7 +206,13 @@ For two machines both running `engine.py`. Single round trip: connect, send one 
 It only runs **between engines** (PC↔PC); the phone has no exec server, by design: running arbitrary shell commands doesn't map well to Android.
  
 ### Controlling the phone from the PC: TCP, port `17162` (`DeviceServer.kt`)
- 
+
+The channel is encrypted with TLS and requires a client certificate. Except for `pair`, every request is only served if the PC certificate fingerprint is paired; otherwise the device replies and closes the connection:
+
+```json
+← {"type": "auth_result", "ok": false, "error": "this computer is not paired with the device, run connect to pair it"}
+```
+
 Single round-trip `get`/`set`:
  
 ```json
@@ -269,7 +275,7 @@ Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
  
 These are recorded gaps, not oversights: read them before using this on anything other than a trusted LAN:
  
-- **There is no authentication or pairing on any channel.** Any device on the local network can right now call `exec` on a PC running `engine.py`, or send `device-get`/`device-set` requests to a phone running the app. There is not yet an equivalent to KDE Connect's (or other apps') TLS certificate pairing. **Do not expose this beyond a trusted local network.**
+- **The PC's `exec` server (port 17161) does not authenticate who connects to it yet.** The device already requires pairing (TLS with a client certificate and user confirmation on both sides), but any machine on the local network that speaks TLS can still call `exec` on a PC running `engine.py`. **Do not expose this beyond a trusted local network.**
 - **File transfer is base64 over a JSON line**, which is simple but inflates the size by ~33% and keeps the entire file in memory on both sides. It's fine for prototyping; a length-prefixed binary protocol would be the real fix for large files.
 - **`engine.py` is neither authenticated nor isolated, by the very nature of the exec feature**: treat any machine running it as reachable and controllable by anything else on the same LAN segment.
 ---
