@@ -57,7 +57,7 @@ flowchart LR
 
 **`mconnect_cli.py`** es un cliente delgado. Arranca `engine.py` solo si no está corriendo, mantiene una conexión D-Bus persistente durante toda la sesión y traduce los comandos escritos en llamadas D-Bus. Dos comandos (el probe de `conectar` y el stream en vivo de `vigilar-dispositivo`) hablan directamente con el dispositivo por TCP en vez de pasar por el engine, un atajo deliberado mientras esa parte del diseño del engine sigue siendo básica.
 
-**La app de Android** corre `DeviceServer.kt`, un pequeño servidor TCP que responde a pedidos `get`/`set`/`file`/`watch`/`pair`, más un broadcast de identidad en segundo plano para que el engine la pueda descubrir. Leer info de multimedia y notificaciones requiere que el usuario le otorgue a la app el permiso especial de **Acceso a Notificaciones** de Android (el mismo requisito que tiene KDE Connect real).
+**La app de Android** corre `DeviceServer.kt`, un pequeño servidor TCP que responde a pedidos `get`/`set`/`file`/`watch`/`pair`/`unpair`, más un broadcast de identidad en segundo plano para que el engine la pueda descubrir. Leer info de multimedia y notificaciones requiere que el usuario le otorgue a la app el permiso especial de **Acceso a Notificaciones** de Android (el mismo requisito que tiene KDE Connect real).
 
 ## Por qué D-Bus, por qué asyncio, por qué sin GLib
 
@@ -143,6 +143,7 @@ python3 engine.py
 | `ayuda [comando]`                          | Ayuda estilo man page. Sin argumentos, lista todos los comandos; `ayuda <comando>` muestra la página completa de ese comando. |
 | `descubrir`                                | Lista los dispositivos que se están anunciando en la red local.                                                              |
 | `conectar <ip>`                            | Se conecta por TLS, te muestra el fingerprint del dispositivo para que lo confirmes la primera vez y completa el emparejamiento mutuo: el teléfono pide su propia confirmación con el fingerprint de este PC. Recién entonces lo marca como dispositivo activo. |
+| `desvincular <ip>`                         | Le avisa al dispositivo para que deje de confiar en este PC y borra el emparejamiento local. Si el dispositivo no responde, igual se elimina de este lado y se avisa. |
 | `obtener-dispositivo <categoria> <campo>`  | Lee un valor del dispositivo conectado. Ver categorías abajo.                                                                    |
 | `ajustar-dispositivo <categoria> <valor>`  | Cambia algo en el dispositivo conectado. Ver categorías abajo.                                                                   |
 | `vigilar-dispositivo notificaciones`       | Muestra notificaciones nuevas en vivo a medida que llegan, hasta Ctrl+C. Se conecta directamente al dispositivo.                      |
@@ -248,6 +249,15 @@ Emparejamiento (el dispositivo le pide confirmación al usuario, así que la res
 
 El dispositivo toma el certificado del PC del propio handshake TLS (el PC lo presenta como certificado de cliente), muestra su huella en un diálogo y solo la guarda si el usuario acepta. `status` es `"already_paired"` si esa huella ya estaba emparejada. Ante cualquier fallo, `ok` es `false` y `error` explica la causa: el usuario rechazó, venció el tiempo de espera, la app no está abierta en el dispositivo o ya hay otra solicitud pendiente. `conectar` lo envía automáticamente al final del emparejamiento.
 
+Desvinculación (solo la atiende a PCs emparejadas):
+
+```json
+→ {"type": "unpair"}
+← {"type": "unpair_result", "ok": true}
+```
+
+El dispositivo borra la huella del PC que envía la petición y nada más: ningún PC puede desvincular a otro. `desvincular` la envía automáticamente.
+
 ### Interfaz D-Bus del engine
  
 Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/Engine`:
@@ -263,6 +273,7 @@ Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/En
 | `TrustDevice` | `(address: s, fingerprint: s) → s` | Empareja el dispositivo: guarda su fingerprint y su certificado completo. Requiere un `GetFingerprint` previo para la misma dirección y el mismo fingerprint; si no hay certificado pendiente devuelve `{"ok": false, "error": "..."}` |
 | `GetTrustedFingerprint` | `(address: s) → s` | Devuelve un string JSON con el fingerprint emparejado de esa dirección (`null` si no hay ninguno) |
 | `PairDevice` | `(address: s) → s` | Le envía al teléfono la petición `pair` para que confíe en este PC y devuelve su respuesta como string JSON. El teléfono ya tiene que estar emparejado desde el lado del PC (`TrustDevice`). Espera hasta 75 segundos la confirmación del usuario en el teléfono |
+| `UnpairDevice` | `(address: s) → s` | Le envía al dispositivo la petición `unpair` y borra el emparejamiento local, aunque el dispositivo no responda. Devuelve un string JSON con `ok`, `notified` (si el dispositivo lo confirmó) y `error` (el motivo si no lo hizo) |
  
 ---
 
@@ -271,7 +282,7 @@ Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/En
  
 Son carencias registradas, no descuidos: léelas antes de usar esto en algo que no sea una LAN de confianza:
  
-- **El servidor `exec` de la PC (puerto 17161) todavía no autentica a quien se conecta.** El dispositivo ya exige emparejamiento (TLS con certificado de cliente y confirmación del usuario en ambos lados), pero cualquier equipo de la red local que hable TLS puede llamar a `exec` en una PC corriendo `engine.py`. **No expongas esto más allá de una red local de confianza.**
+- **El servidor `exec` de la PC (puerto 17161) todavía no autentica a quien se conecta.** El dispositivo ya exige emparejamiento (TLS con certificado de cliente y confirmación del usuario en ambos lados), pero cualquier equipo de la red local que hable TLS puede llamar a `exec` en una PC corriendo `engine.py`. **No expongas esto más allá de una red local de confianza.** 
 - **La transferencia de archivos es base64 sobre una línea JSON**, lo cual es simple pero infla el tamaño en ~33% y mantiene el archivo completo en memoria en ambos lados. Está bien para prototipar; un protocolo binario con prefijo de longitud sería el arreglo real para archivos grandes.
 - **`engine.py` no está autenticado ni aislado por la naturaleza de la función de exec**, trata cualquier máquina que lo corra como alcanzable y controlable por cualquier otra cosa en el mismo segmento de LAN.
 ---

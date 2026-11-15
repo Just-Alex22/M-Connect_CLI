@@ -33,7 +33,7 @@ import ssl
 
 from dbus_next.aio import MessageBus
 from identity import build_client_ssl_context, fingerprint_from_der, local_fingerprint
-from trust import is_trusted
+from trust import is_trusted, trusted_addresses
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import FileHistory, InMemoryHistory
@@ -177,6 +177,10 @@ class EngineClient:
 
     async def pair_device(self, address):
         raw = await self._call("call_pair_device", address)
+        return json.loads(raw)
+
+    async def unpair_device(self, address):
+        raw = await self._call("call_unpair_device", address)
         return json.loads(raw)
 
 def stop_engine():
@@ -367,12 +371,24 @@ COMMAND_DOCS = {
         "synopsis": ["conectar <ip>"],
         "summary": "selecciona y verifica el dispositivo con el que hablan los comandos siguientes",
         "description": [
-            f"Verifica que <ip> sea realmente alcanzable en el puerto {PHONE_DEVICE_PORT} (donde escucha la app M-Connect), y recién ahí lo guarda como dispositivo activo. Su dirección se muestra en el prompt y la usan obtener-dispositivo y ajustar-dispositivo hasta que se seleccione otro.",
-            "Después de correr descubrir, TAB completa las direcciones encontradas.",
+            f"Se conecta por TLS al puerto {PHONE_DEVICE_PORT} de <ip> (donde escucha la app M-Connect) y, la primera vez, muestra el fingerprint del dispositivo para que lo confirmes. Después completa el emparejamiento mutuo: el dispositivo pide su propia confirmación con el fingerprint de este PC.",
+            "Recién entonces lo guarda como dispositivo activo. Su dirección se muestra en el prompt y la usan obtener-dispositivo y ajustar-dispositivo hasta que se seleccione otro. Si el dispositivo ya estaba emparejado, solo se verifica y se conecta.",
         ],
         "sections": [],
         "examples": [
             ("conectar 192.168.1.57", "Conecta al dispositivo en 192.168.1.57."),
+        ],
+    },
+        "desvincular": {
+        "synopsis": ["desvincular <ip>"],
+        "summary": "elimina el emparejamiento con un dispositivo",
+        "description": [
+            "Le avisa al dispositivo para que deje de confiar en este PC y luego borra su fingerprint del almacén de confianza local. Si el dispositivo no responde, el emparejamiento se elimina igual de este lado y se avisa de que el otro sigue confiando hasta que se desvincule desde allí.",
+            "Para volver a usarlo hay que emparejarlo de nuevo con conectar. Si <ip> es el dispositivo activo, deja de estarlo. Después de correr desvincular, TAB completa las direcciones emparejadas.",
+        ],
+        "sections": [],
+        "examples": [
+            ("desvincular 192.168.1.57", "Elimina el emparejamiento con el dispositivo en 192.168.1.57."),
         ],
     },
     "obtener-dispositivo": {
@@ -664,6 +680,31 @@ async def handle_connect(args, state):
     print(colorize(f"Emparejado y conectado a {ip}", Palette.SUCCESS))
 
 
+async def handle_unpair(args, state):
+    if len(args) != 1:
+        print_usage("desvincular")
+        return
+
+    ip = args[0]
+
+    try:
+        result = await with_spinner(f"Desvinculando {ip}...", state["engine"].unpair_device(ip))
+    except EngineUnavailable as e:
+        print_engine_unavailable(e)
+        return
+
+    if not result.get("ok"):
+        print(colorize(f"No se pudo desvincular {ip}: {result.get('error', 'error desconocido')}", Palette.ERROR))
+        return
+
+    if state.get("connected_address") == ip:
+        state["connected_address"] = None
+
+    print(colorize(f"{ip} desvinculado.", Palette.SUCCESS))
+    if not result.get("notified"):
+        print(colorize(f"No se pudo avisar al dispositivo: {result.get('error', 'error desconocido')}", Palette.WARNING))
+        print(colorize("Este PC ya no confía en él, pero él seguirá confiando en este PC hasta que lo desvincules desde allí.", Palette.MUTED))
+
 async def handle_clear(args, state):
     clear_screen()
 
@@ -884,6 +925,7 @@ HANDLERS = {
     "enviar-archivo": handle_file_send,
     "limpiar": handle_clear,
     "salir": handle_exit,
+    "desvincular": handle_unpair,
 }
 
 
@@ -930,7 +972,9 @@ class CommandCompleter(Completer):
 
         if command == "vigilar-dispositivo" and position == 0:
             return ["notificaciones"]
-
+        
+        if command == "desvincular" and position == 0:
+            return trusted_addresses()
         return []
 
     def get_completions(self, document, complete_event):

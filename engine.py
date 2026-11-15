@@ -35,7 +35,7 @@ from identity import (
     build_client_ssl_context,
     fingerprint_from_der,
 )
-from trust import is_trusted, trust as trust_device, get_trusted_fingerprint
+from trust import is_trusted, trust as trust_device, get_trusted_fingerprint, forget as forget_device
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -46,6 +46,7 @@ DEVICE_TIMEOUT_SECONDS = 6
 CLEANUP_INTERVAL_SECONDS = 2
 PENDING_CERTIFICATE_TTL_SECONDS = 300
 PAIR_RESPONSE_TIMEOUT_SECONDS = 75
+UNPAIR_TIMEOUT_SECONDS = 15
 
 BUS_NAME = "com.appleton.MConnect"
 OBJECT_PATH = "/com/appleton/MConnect/Engine"
@@ -347,6 +348,25 @@ async def _call_phone_device(address, request, timeout=None):
 
     return line.decode("utf-8").strip()
 
+async def unpair_device(address):
+    if get_trusted_fingerprint(address) is None:
+        return json.dumps({"ok": False, "error": f"{address} is not paired"})
+
+    try:
+        raw = await asyncio.wait_for(
+            _call_phone_device(address, {"type": "unpair"}), UNPAIR_TIMEOUT_SECONDS
+        )
+        result = json.loads(raw)
+    except asyncio.TimeoutError:
+        result = {"ok": False, "error": "timed out waiting for the device"}
+    except ValueError:
+        result = {"ok": False, "error": "invalid response from the device"}
+
+    forget_device(address)
+
+    notified = bool(result.get("ok"))
+    error = None if notified else result.get("error", "unknown error")
+    return json.dumps({"ok": True, "notified": notified, "error": error})
 
 class EngineInterface(ServiceInterface):
     def __init__(self):
@@ -402,6 +422,10 @@ class EngineInterface(ServiceInterface):
     @method()
     async def PairDevice(self, address: "s") -> "s":
         return await _call_phone_device(address, {"type": "pair"}, PAIR_RESPONSE_TIMEOUT_SECONDS)
+
+    @method()
+    async def UnpairDevice(self, address: "s") -> "s":
+        return await unpair_device(address)
 
 
 async def start_dbus_service():

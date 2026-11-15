@@ -78,6 +78,8 @@ class DeviceServer(private val context: Context) {
 
                 if (request.optString("type") == "pair") {
                     writer.println(handlePair(socket.inetAddress.hostAddress ?: "unknown", fingerprint).toString())
+                } else if (request.optString("type") == "unpair") {
+                    writer.println(handleUnpair(fingerprint).toString())
                 } else if (request.optString("type") == "watch") {
                     handleWatch(request.optString("category"), writer)
                 } else {
@@ -90,6 +92,14 @@ class DeviceServer(private val context: Context) {
                 socket.close()
             }
         }
+    }
+
+    private fun handleUnpair(fingerprint: String?): JSONObject {
+        if (fingerprint == null) {
+            return errorResult("unpair_result", "client certificate required")
+        }
+        TrustStore.forget(context, fingerprint)
+        return okResult("unpair_result")
     }
 
     private fun isPaired(fingerprint: String?): Boolean {

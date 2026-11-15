@@ -55,6 +55,8 @@ def get_trusted_fingerprint(address):
     value = _load().get(address)
     return None if value is None else _entry(value)["fingerprint"]
 
+def trusted_addresses():
+    return list(_load().keys())
 
 def has_trusted_certificate(address):
     value = _load().get(address)

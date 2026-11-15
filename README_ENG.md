@@ -58,7 +58,7 @@ flowchart LR
 
 **`mconnect_cli.py`** is a thin client. It starts `engine.py` only if it isn't already running, keeps a persistent D-Bus connection open for the whole session, and translates typed commands into D-Bus calls. Two commands (the `conectar` probe and the live `vigilar-dispositivo` stream) talk directly to the phone over TCP instead of going through the engine, a deliberate shortcut while that part of the engine's design is still basic.
 
-**The Android app** runs `DeviceServer.kt`, a small TCP server that answers `get`/`set`/`file`/`watch`/`pair` requests, plus a background identity broadcast so the engine can discover it. Reading media and notification info requires the user to grant the app Android's special **Notification Access** permission (the same requirement the real KDE Connect has).
+**The Android app** runs `DeviceServer.kt`, a small TCP server that answers `get`/`set`/`file`/`watch`/`pair`/`unpair` requests, plus a background identity broadcast so the engine can discover it. Reading media and notification info requires the user to grant the app Android's special **Notification Access** permission (the same requirement the real KDE Connect has).
 
 ## Why D-Bus, why asyncio, why no GLib
 
@@ -153,6 +153,7 @@ python3 engine.py
 | `enviar-archivo <ruta-local> [subcarpeta]` | Sends a file from the PC to `Download/M-Connect[/subcarpeta]` on the phone.                                                  |
 | `limpiar`                                  | Clears the screen.                                                                                                           |
 | `salir`                                    | Exits the shell (Ctrl+C also works).                                                                                         |
+| `desvincular <ip>`                         | Tells the device to stop trusting this PC and deletes the local pairing. If the device does not answer, the pairing is still removed on this side and a warning is shown. |
 
 Press **Tab** at any time to autocomplete commands, categories, fields, values, and the IPs of known devices. **Up/Down** navigate the command history (stored in `~/.mconnect_history`). The first word of the line is only colored when it is a recognized command.
 
@@ -252,6 +253,15 @@ Pairing (the device asks the user for confirmation, so the reply can take up to 
 
 The device takes the PC certificate from the TLS handshake itself (the PC presents it as a client certificate), shows its fingerprint in a dialog, and only stores it if the user accepts. `status` is `"already_paired"` if that fingerprint was already paired. On any failure, `ok` is `false` and `error` explains why: the user rejected, the wait timed out, the app is not open on the phone, or another request is already pending. `conectar` sends it automatically at the end of pairing.
 
+Unpairing (only served to paired PCs):
+
+```json
+→ {"type": "unpair"}
+← {"type": "unpair_result", "ok": true}
+```
+
+The device deletes the fingerprint of the PC that sends the request and nothing else: no PC can unpair another one. `desvincular` sends it automatically.
+
 ### Engine D-Bus interface
  
 Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
@@ -267,6 +277,7 @@ Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
 | `TrustDevice` | `(address: s, fingerprint: s) → s` | Pairs the device: stores its fingerprint and its full certificate. Requires a previous `GetFingerprint` for the same address and fingerprint; if there is no pending certificate it returns `{"ok": false, "error": "..."}` |
 | `GetTrustedFingerprint` | `(address: s) → s` | Returns a JSON string with the paired fingerprint for that address (`null` if there is none) |
 | `PairDevice` | `(address: s) → s` | Sends the phone the `pair` request so it trusts this PC and returns its reply as a JSON string. The phone must already be paired on the PC side (`TrustDevice`). Waits up to 75 seconds for the user's confirmation on the phone |
+| `UnpairDevice` | `(address: s) → s` | Sends the device the `unpair` request and deletes the local pairing even if the device does not answer. Returns a JSON string with `ok`, `notified` (whether the device confirmed) and `error` (the reason if it did not) |
 
 ---
 
