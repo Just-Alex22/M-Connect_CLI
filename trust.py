@@ -58,6 +58,17 @@ def get_trusted_fingerprint(address):
 def trusted_addresses():
     return list(_load().keys())
 
+def list_trusted():
+    entries = []
+    for address, value in _load().items():
+        entry = _entry(value)
+        entries.append({
+            "address": address,
+            "fingerprint": entry["fingerprint"],
+            "has_certificate": entry["certificate"] is not None,
+        })
+    return entries
+
 def has_trusted_certificate(address):
     value = _load().get(address)
     return value is not None and _entry(value)["certificate"] is not None

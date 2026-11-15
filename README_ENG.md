@@ -154,6 +154,7 @@ python3 engine.py
 | `limpiar`                                  | Clears the screen.                                                                                                           |
 | `salir`                                    | Exits the shell (Ctrl+C also works).                                                                                         |
 | `desvincular <ip>`                         | Tells the device to stop trusting this PC and deletes the local pairing. If the device does not answer, the pairing is still removed on this side and a warning is shown. |
+| `status <tema>`                            | Prints status and debugging information. Topics: `engine`, `emparejados`, `dispositivos` and `identidad`. |
 
 Press **Tab** at any time to autocomplete commands, categories, fields, values, and the IPs of known devices. **Up/Down** navigate the command history (stored in `~/.mconnect_history`). The first word of the line is only colored when it is a recognized command.
 
@@ -278,7 +279,7 @@ Bus name `com.appleton.MConnect`, object path `/com/appleton/MConnect/Engine`:
 | `GetTrustedFingerprint` | `(address: s) → s` | Returns a JSON string with the paired fingerprint for that address (`null` if there is none) |
 | `PairDevice` | `(address: s) → s` | Sends the phone the `pair` request so it trusts this PC and returns its reply as a JSON string. The phone must already be paired on the PC side (`TrustDevice`). Waits up to 75 seconds for the user's confirmation on the phone |
 | `UnpairDevice` | `(address: s) → s` | Sends the device the `unpair` request and deletes the local pairing even if the device does not answer. Returns a JSON string with `ok`, `notified` (whether the device confirmed) and `error` (the reason if it did not) |
-
+| `GetStatus` | `() → s` | Returns a JSON string with the engine status: local device id and name, PID, uptime, port status, discovered devices, number of paired devices, pending certificates and debugging data (versions and timeouts) |
 ---
 
 

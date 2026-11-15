@@ -32,8 +32,8 @@ import atexit
 import ssl
 
 from dbus_next.aio import MessageBus
-from identity import build_client_ssl_context, fingerprint_from_der, local_fingerprint
-from trust import is_trusted, trusted_addresses
+from identity import build_client_ssl_context, fingerprint_from_der, local_fingerprint, identity_info, IDENTITY_DIR
+from trust import is_trusted, trusted_addresses, list_trusted, TRUST_PATH
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import FileHistory, InMemoryHistory
@@ -181,6 +181,10 @@ class EngineClient:
 
     async def unpair_device(self, address):
         raw = await self._call("call_unpair_device", address)
+        return json.loads(raw)
+
+    async def get_status(self):
+        raw = await self._call("call_get_status")
         return json.loads(raw)
 
 def stop_engine():
@@ -389,6 +393,29 @@ COMMAND_DOCS = {
         "sections": [],
         "examples": [
             ("desvincular 192.168.1.57", "Elimina el emparejamiento con el dispositivo en 192.168.1.57."),
+        ],
+    },
+    "status": {
+        "synopsis": ["status <tema>"],
+        "summary": "muestra el estado y datos de depuración",
+        "description": [
+            "Imprime información de estado y de depuración de este PC, del engine y de los dispositivos. Los temas engine y dispositivos consultan al engine por D-Bus; emparejados e identidad leen los archivos locales, así que funcionan aunque el engine esté caído.",
+            "Después de correr status, TAB completa los temas.",
+        ],
+        "sections": [
+            (
+                "TEMAS",
+                [
+                    ("engine", "Información del engine, estado actual (puertos, dispositivos, tiempo activo) y datos de depuración."),
+                    ("emparejados", "Dispositivos emparejados: dirección, fingerprint y si hay certificado guardado."),
+                    ("dispositivos", "Dispositivos que el engine tiene descubiertos ahora mismo y si están emparejados."),
+                    ("identidad", "Identidad de este PC: id, fingerprint, vigencia del certificado y permisos de la clave."),
+                ],
+            ),
+        ],
+        "examples": [
+            ("status engine", "Muestra el estado y los datos de depuración del engine."),
+            ("status emparejados", "Lista los dispositivos emparejados."),
         ],
     },
     "obtener-dispositivo": {
@@ -705,6 +732,179 @@ async def handle_unpair(args, state):
         print(colorize(f"No se pudo avisar al dispositivo: {result.get('error', 'error desconocido')}", Palette.WARNING))
         print(colorize("Este PC ya no confía en él, pero él seguirá confiando en este PC hasta que lo desvincules desde allí.", Palette.MUTED))
 
+def format_duration(total_seconds):
+    hours, remainder = divmod(int(total_seconds), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours} h {minutes} min {seconds} s"
+    if minutes:
+        return f"{minutes} min {seconds} s"
+    return f"{seconds} s"
+
+
+def print_status_section(title, rows):
+    print(colorize(title, Palette.TITLE))
+    width = max(len(label) for label, _ in rows)
+    for label, value in rows:
+        print(f"  {colorize(label.ljust(width), Palette.MUTED)}  {value}")
+
+
+def listening_label(listening):
+    if listening:
+        return colorize("[escuchando]", Palette.SUCCESS)
+    return colorize("[caído]", Palette.ERROR)
+
+
+def read_log_tail(path, lines=5):
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - 4096))
+            chunk = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None, 0
+    return chunk.splitlines()[-lines:], size
+
+
+async def fetch_engine_status(state):
+    try:
+        return await state["engine"].get_status()
+    except EngineUnavailable as e:
+        print_engine_unavailable(e)
+        return None
+
+
+async def status_engine(args, state):
+    if args:
+        print_usage("status")
+        return
+
+    status = await fetch_engine_status(state)
+    if status is None:
+        return
+
+    discovery = status["discovery"]
+    exec_server = status["exec"]
+    print_status_section("Engine", [
+        ("Dispositivo local", f"{status['device_name']} ({status['device_id']})"),
+        ("Bus D-Bus", status["dbus_name"]),
+        ("PID", str(status["pid"])),
+        ("Activo hace", format_duration(status["uptime_seconds"])),
+        ("Descubrimiento", f"UDP {discovery['port']} {listening_label(discovery['listening'])}"),
+        ("Servidor exec", f"TCP {exec_server['port']} {listening_label(exec_server['listening'])}"),
+        ("Puerto de dispositivos", f"TCP {status['device_port']}"),
+        ("Dispositivos", f"{len(status['devices'])} descubiertos, {status['paired_count']} emparejados"),
+        ("Dispositivo activo", state.get("connected_address") or "ninguno"),
+    ])
+    print()
+
+    debug = status["debug"]
+    timeouts = debug["timeouts"]
+    log_lines, log_size = read_log_tail(ENGINE_LOG_PATH)
+    if log_lines is None:
+        log_info = f"{ENGINE_LOG_PATH} (no existe)"
+    else:
+        log_info = f"{ENGINE_LOG_PATH} ({log_size} bytes)"
+    print_status_section("Depuración", [
+        ("Python", debug["python"]),
+        ("Sistema", debug["platform"]),
+        ("dbus-next", debug["dbus_next"]),
+        ("cryptography", debug["cryptography"]),
+        ("Certificados pendientes", f"{status['pending_certificates']} (caducan a los {timeouts['pending_certificate_ttl']} s)"),
+        ("Anuncio de presencia", f"cada {timeouts['announce_interval']} s, expira a los {timeouts['device_timeout']} s sin señal"),
+        ("Esperas", f"emparejar {timeouts['pair_response']} s, desvincular {timeouts['unpair']} s"),
+        ("Identidad", IDENTITY_DIR),
+        ("Almacén de confianza", TRUST_PATH),
+        ("Log del engine", log_info),
+    ])
+    if log_lines:
+        print(colorize("  Últimas líneas del log", Palette.MUTED))
+        for line in log_lines:
+            print(f"    {line}")
+
+
+async def status_paired(args, state):
+    if args:
+        print_usage("status")
+        return
+
+    entries = list_trusted()
+    if not entries:
+        print(colorize("No hay dispositivos emparejados.", Palette.MUTED))
+        return
+
+    active = state.get("connected_address")
+    print(colorize("Dispositivos emparejados", Palette.TITLE))
+    for entry in entries:
+        marker = f" {colorize('[activo]', Palette.SUCCESS)}" if entry["address"] == active else ""
+        if entry["has_certificate"]:
+            certificate = "guardado"
+        else:
+            certificate = "falta (ejecuta conectar de nuevo para completarlo)"
+        print(f"  {entry['address']}{marker}")
+        print(f"    {colorize('Fingerprint', Palette.MUTED)}  {entry['fingerprint']}")
+        print(f"    {colorize('Certificado', Palette.MUTED)}  {certificate}")
+
+
+async def status_devices(args, state):
+    if args:
+        print_usage("status")
+        return
+
+    status = await fetch_engine_status(state)
+    if status is None:
+        return
+
+    devices = status["devices"]
+    if not devices:
+        print(colorize("El engine no tiene dispositivos descubiertos en este momento.", Palette.MUTED))
+        print(colorize("Si esperabas ver alguno, revisa que esté en la misma red y que no haya una VPN activa.", Palette.MUTED))
+        return
+
+    paired = set(trusted_addresses())
+    print(colorize("Dispositivos descubiertos", Palette.TITLE))
+    for device in devices:
+        if device["address"] in paired:
+            label = colorize("[emparejado]", Palette.SUCCESS)
+        else:
+            label = colorize("[sin emparejar]", Palette.MUTED)
+        print(f"  {device['name']}  {device['address']}  visto hace {device['seen_seconds_ago']} s  {label}")
+
+
+async def status_identity(args, state):
+    if args:
+        print_usage("status")
+        return
+
+    info = identity_info()
+    print_status_section("Identidad de este PC", [
+        ("ID del dispositivo", info["device_id"]),
+        ("Fingerprint", info["fingerprint"]),
+        ("Sujeto", info["subject"]),
+        ("Vigencia", f"{info['valid_from']} a {info['valid_until']}"),
+        ("Certificado", info["cert_path"]),
+        ("Clave privada", f"{info['key_path']} (permisos {info['key_mode']:03o})"),
+    ])
+    if info["key_mode"] & 0o077:
+        print(colorize("La clave privada es legible por otros usuarios; restringe los permisos con chmod 600.", Palette.WARNING))
+
+
+STATUS_HANDLERS = {
+    "engine": status_engine,
+    "emparejados": status_paired,
+    "dispositivos": status_devices,
+    "identidad": status_identity,
+}
+STATUS_TOPICS = list(STATUS_HANDLERS.keys())
+
+
+async def handle_status(args, state):
+    if not args or args[0] not in STATUS_HANDLERS:
+        print_usage("status")
+        return
+
+    await STATUS_HANDLERS[args[0]](args[1:], state)
+
 async def handle_clear(args, state):
     clear_screen()
 
@@ -926,6 +1126,7 @@ HANDLERS = {
     "limpiar": handle_clear,
     "salir": handle_exit,
     "desvincular": handle_unpair,
+    "status": handle_status,
 }
 
 
@@ -976,6 +1177,9 @@ class CommandCompleter(Completer):
         if command == "desvincular" and position == 0:
             return trusted_addresses()
         return []
+
+        if command == "status" and position == 0:
+            return STATUS_TOPICS
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor

@@ -25,6 +25,7 @@ import time
 import platform
 import base64
 import os
+import importlib.metadata
 
 from dbus_next.service import ServiceInterface, method
 from dbus_next.aio import MessageBus
@@ -35,7 +36,7 @@ from identity import (
     build_client_ssl_context,
     fingerprint_from_der,
 )
-from trust import is_trusted, trust as trust_device, get_trusted_fingerprint, forget as forget_device
+from trust import is_trusted, trust as trust_device, get_trusted_fingerprint, forget as forget_device, trusted_addresses
 
 DISCOVERY_PORT = 17160
 EXEC_PORT = 17161
@@ -53,9 +54,11 @@ OBJECT_PATH = "/com/appleton/MConnect/Engine"
 
 DEVICE_ID = load_or_create_device_id()
 DEVICE_NAME = platform.node()
+ENGINE_STARTED_AT = time.monotonic()
 
 devices = {}
 pending_certificates = {}
+engine_state = {"discovery_listening": False, "exec_listening": False}
 
 
 def build_identity_packet():
@@ -134,6 +137,7 @@ async def start_discovery():
     transport, protocol = await loop.create_datagram_endpoint(
         DiscoveryProtocol, sock=sock
     )
+    engine_state["discovery_listening"] = True
 
     await asyncio.gather(announce_loop(transport), cleanup_loop())
 
@@ -187,8 +191,10 @@ async def start_exec_server():
     server = await asyncio.start_server(
         handle_exec_client, "0.0.0.0", EXEC_PORT, ssl=build_server_ssl_context()
     )
+    engine_state["exec_listening"] = True
     async with server:
         await server.serve_forever()
+
 
 def remember_pending_certificate(address, fingerprint, certificate):
     now = time.monotonic()
@@ -348,6 +354,7 @@ async def _call_phone_device(address, request, timeout=None):
 
     return line.decode("utf-8").strip()
 
+
 async def unpair_device(address):
     if get_trusted_fingerprint(address) is None:
         return json.dumps({"ok": False, "error": f"{address} is not paired"})
@@ -367,6 +374,55 @@ async def unpair_device(address):
     notified = bool(result.get("ok"))
     error = None if notified else result.get("error", "unknown error")
     return json.dumps({"ok": True, "notified": notified, "error": error})
+
+
+def _package_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def get_status():
+    now = time.monotonic()
+    known_devices = [
+        {
+            "id": device_id,
+            "name": device["deviceName"],
+            "address": device["address"],
+            "port": device["port"],
+            "seen_seconds_ago": round(now - device["last_seen"], 1),
+        }
+        for device_id, device in devices.items()
+    ]
+    return {
+        "device_id": DEVICE_ID,
+        "device_name": DEVICE_NAME,
+        "pid": os.getpid(),
+        "uptime_seconds": int(now - ENGINE_STARTED_AT),
+        "dbus_name": BUS_NAME,
+        "discovery": {"port": DISCOVERY_PORT, "listening": engine_state["discovery_listening"]},
+        "exec": {"port": EXEC_PORT, "listening": engine_state["exec_listening"]},
+        "device_port": PHONE_DEVICE_PORT,
+        "devices": known_devices,
+        "paired_count": len(trusted_addresses()),
+        "pending_certificates": len(pending_certificates),
+        "debug": {
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "dbus_next": _package_version("dbus-next"),
+            "cryptography": _package_version("cryptography"),
+            "timeouts": {
+                "announce_interval": ANNOUNCE_INTERVAL_SECONDS,
+                "device_timeout": DEVICE_TIMEOUT_SECONDS,
+                "cleanup_interval": CLEANUP_INTERVAL_SECONDS,
+                "pending_certificate_ttl": PENDING_CERTIFICATE_TTL_SECONDS,
+                "pair_response": PAIR_RESPONSE_TIMEOUT_SECONDS,
+                "unpair": UNPAIR_TIMEOUT_SECONDS,
+            },
+        },
+    }
+
 
 class EngineInterface(ServiceInterface):
     def __init__(self):
@@ -426,6 +482,10 @@ class EngineInterface(ServiceInterface):
     @method()
     async def UnpairDevice(self, address: "s") -> "s":
         return await unpair_device(address)
+
+    @method()
+    def GetStatus(self) -> "s":
+        return json.dumps(get_status())
 
 
 async def start_dbus_service():

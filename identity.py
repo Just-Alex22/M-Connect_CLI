@@ -116,6 +116,22 @@ def local_fingerprint():
     with open(CERT_PATH) as f:
         return fingerprint_from_der(ssl.PEM_cert_to_DER_cert(f.read()))
 
+def identity_info():
+    load_or_create_identity()
+    with open(CERT_PATH, "rb") as f:
+        cert = x509.load_pem_x509_certificate(f.read())
+    valid_from = getattr(cert, "not_valid_before_utc", None) or cert.not_valid_before
+    valid_until = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after
+    return {
+        "device_id": load_or_create_device_id(),
+        "fingerprint": cert_fingerprint_display(cert),
+        "subject": cert.subject.rfc4514_string(),
+        "valid_from": valid_from.date().isoformat(),
+        "valid_until": valid_until.date().isoformat(),
+        "cert_path": CERT_PATH,
+        "key_path": KEY_PATH,
+        "key_mode": os.stat(KEY_PATH).st_mode & 0o777,
+    }
 
 def build_server_ssl_context():
     load_or_create_identity()

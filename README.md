@@ -144,6 +144,7 @@ python3 engine.py
 | `descubrir`                                | Lista los dispositivos que se están anunciando en la red local.                                                              |
 | `conectar <ip>`                            | Se conecta por TLS, te muestra el fingerprint del dispositivo para que lo confirmes la primera vez y completa el emparejamiento mutuo: el teléfono pide su propia confirmación con el fingerprint de este PC. Recién entonces lo marca como dispositivo activo. |
 | `desvincular <ip>`                         | Le avisa al dispositivo para que deje de confiar en este PC y borra el emparejamiento local. Si el dispositivo no responde, igual se elimina de este lado y se avisa. |
+| `status <tema>`                            | Imprime información de estado y de depuración. Temas: `engine`, `emparejados`, `dispositivos` e `identidad`. |
 | `obtener-dispositivo <categoria> <campo>`  | Lee un valor del dispositivo conectado. Ver categorías abajo.                                                                    |
 | `ajustar-dispositivo <categoria> <valor>`  | Cambia algo en el dispositivo conectado. Ver categorías abajo.                                                                   |
 | `vigilar-dispositivo notificaciones`       | Muestra notificaciones nuevas en vivo a medida que llegan, hasta Ctrl+C. Se conecta directamente al dispositivo.                      |
@@ -274,6 +275,7 @@ Nombre de bus `com.appleton.MConnect`, ruta de objeto `/com/appleton/MConnect/En
 | `GetTrustedFingerprint` | `(address: s) → s` | Devuelve un string JSON con el fingerprint emparejado de esa dirección (`null` si no hay ninguno) |
 | `PairDevice` | `(address: s) → s` | Le envía al teléfono la petición `pair` para que confíe en este PC y devuelve su respuesta como string JSON. El teléfono ya tiene que estar emparejado desde el lado del PC (`TrustDevice`). Espera hasta 75 segundos la confirmación del usuario en el teléfono |
 | `UnpairDevice` | `(address: s) → s` | Le envía al dispositivo la petición `unpair` y borra el emparejamiento local, aunque el dispositivo no responda. Devuelve un string JSON con `ok`, `notified` (si el dispositivo lo confirmó) y `error` (el motivo si no lo hizo) |
+| `GetStatus` | `() → s` | Devuelve un string JSON con el estado del engine: identificador y nombre del dispositivo local, PID, tiempo activo, estado de los puertos, dispositivos descubiertos, cantidad de emparejados, certificados pendientes y datos de depuración (versiones y esperas) |
  
 ---
 
